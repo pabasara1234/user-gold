@@ -38,7 +38,7 @@ function AdminLogin({ onLogin }: { onLogin: (email: string, password: string) =>
       setBusy(false)
     }
   }
-  return <main className="admin-login-screen"><section className="admin-login-panel"><Brand /><span className="eyebrow">ADMINISTRATOR ACCESS</span><h1>Access management</h1><p>Sign in with the Firebase account whose UID is configured as an admin.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>Email address<input name="email" type="email" autoComplete="username" required /></label><label>Password<input name="password" type="password" autoComplete="current-password" required /></label>{error && <div className="form-error"><CircleAlert size={14} />{error}</div>}<button className="primary-button" type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form><p className="admin-reset-link"><a href={appPath()}>Forgot password? Reset it from member sign-in.</a></p></section></main>
+  return <main className="admin-login-screen"><section className="admin-login-panel"><Brand /><span className="eyebrow">ADMINISTRATOR ACCESS</span><h1>Access management</h1><p>Sign in with the Firebase account whose UID is configured as an admin.</p><form className="auth-form" onSubmit={(event) => void submit(event)}><label>Email address<input name="email" type="email" autoComplete="username" required /></label><label>Password<input name="password" type="password" autoComplete="current-password" required /></label>{error && <div className="form-error"><CircleAlert size={14} />{error}</div>}<button className="primary-button" type="submit" disabled={busy}>{busy ? 'Signing inâ€¦' : 'Sign in'}</button></form><p className="admin-reset-link"><a href={appPath()}>Forgot password? Reset it from member sign-in.</a></p></section></main>
 }
 
 function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => Promise<void> }) {
@@ -89,6 +89,7 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
     if (!relayEnabled || !user) return
     let active = true
     let busy = false
+    let lastMarketPublishedAt = 0
     const relay = async () => {
       if (busy) return
       busy = true
@@ -97,9 +98,11 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
         const response = await fetch(apiUrl(`/api/signals?symbol=${encodeURIComponent(relaySymbol)}`), { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
         if (!response.ok) throw new Error(`Signal API returned ${response.status}. Check the MT5 service.`)
         const result = await response.json() as { signals?: EngineSignal[] }
+        const publishHeaders = new Headers({ 'Content-Type': 'application/json' })
+        publishHeaders.set('Authorization', ['Bearer', token].join(' '))
         const publishResponse = await fetch(apiUrl('/api/signals/publish'), {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: publishHeaders,
           body: JSON.stringify({ symbol: relaySymbol, signals: result.signals ?? [] }),
         })
         if (!publishResponse.ok) throw new Error(`Signal publish API returned ${publishResponse.status}.`)
@@ -108,6 +111,17 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
           setSignalCount(published.count)
           setRelayUpdated(new Date().toLocaleTimeString())
           setRelayError('')
+        }
+        if (Date.now() - lastMarketPublishedAt >= 30_000) {
+          const marketHeaders = new Headers({ 'Content-Type': 'application/json' })
+          marketHeaders.set('Authorization', ['Bearer', token].join(' '))
+          const marketResponse = await fetch(apiUrl('/api/market/publish'), {
+            method: 'POST',
+            headers: marketHeaders,
+            body: JSON.stringify({ symbol: relaySymbol }),
+          })
+          if (!marketResponse.ok) throw new Error(`Chart publish API returned ${marketResponse.status}.`)
+          lastMarketPublishedAt = Date.now()
         }
       } catch (reason) {
         if (active) setRelayError(reason instanceof Error ? reason.message : 'Could not relay engine signals.')
@@ -124,14 +138,14 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
     <main className="admin-content"><div className="admin-heading"><div><span className="eyebrow">OPERATIONS / ACCESS CONTROL</span><h1>Admin desk</h1><p>Review member requests and keep the market signal feed connected.</p></div><a className="secondary-button" href={appPath()}>Open user site</a></div>
       <div className="admin-metrics"><div className="admin-metric"><span>REGISTERED MEMBERS</span><strong>{users.length}</strong></div><div className="admin-metric"><span>WAITING FOR REVIEW</span><strong>{pendingCount}</strong></div><div className="admin-metric"><span>ACTIVE ACCESS</span><strong>{approvedCount}</strong></div></div>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MEMBERS</span><h2>User access</h2></div><input className="admin-filter" aria-label="Search users" placeholder="Search name, email or phone" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{error && <div className="admin-error" role="alert">{error}</div>}{notice && <div className="admin-success" role="status">{notice}</div>}<div className="user-list"><div className="user-row header"><span>MEMBER</span><span>CONTACT</span><span>NIC</span><span>STATUS</span><span>ACTIONS</span></div>{filteredUsers.length ? filteredUsers.map((item) => <UserRow key={item.uid} item={item} busy={workingUid === item.uid} onApprove={() => void setAccess(item, 'approved')} onRevoke={() => void setAccess(item, 'disabled')} />) : <div className="list-empty">{users.length ? 'No matching members.' : 'No user registrations yet.'}</div>}</div></section>
-        <aside className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MT5 · PYTHON ENGINE</span><h2>Signal relay</h2></div><Radio size={16} color="#63736a" /></div><div className="relay-body"><div className={`relay-status ${relayEnabled ? 'running' : ''}`}><i />{relayEnabled ? 'Relay is polling every 5 seconds' : 'Relay is stopped'}</div><label className="field-label" htmlFor="relay-symbol" style={{ display: 'block', marginTop: 16, color: '#78827c', fontSize: 9 }}>MT5 SYMBOL</label><div className="symbol-picker" style={{ marginTop: 6, width: '100%' }}><input id="relay-symbol" value={relaySymbol} disabled={relayEnabled} onChange={(event) => setRelaySymbol(event.target.value.toUpperCase())} aria-label="Relay symbol" /><button type="button" title="Reset symbol" aria-label="Reset symbol" disabled={relayEnabled} onClick={() => setRelaySymbol('GOLD')}><RefreshCw size={13} /></button></div><button className={`relay-button ${relayEnabled ? 'stop' : ''}`} type="button" disabled={(!relayEnabled && !validRelaySymbol) || !adminUids.size || (!relayEnabled && !relayApiAvailable)} onClick={() => setRelayEnabled((enabled) => !enabled)}>{relayEnabled ? 'Stop relay' : 'Start signal relay'}</button>{!relayApiAvailable && <small className="password-message">Start the relay from the local admin page on the MT5 laptop, not this hosted page.</small>}{!validRelaySymbol && <small className="password-message">Use 2–20 letters, numbers, dots, underscores or hyphens.</small>}{relayError && <div className="admin-error" role="alert">{relayError}</div>}<div className="relay-meta"><span>LAST CHECK <strong>{relayUpdated}</strong></span><span>PUBLISHED SIGNALS <strong>{signalCount}</strong></span></div><p className="relay-note">Keep the local admin page open on the MT5 laptop while the relay is active. It reads engine signals from the local Python/MT5 API and writes them to Firebase. Approved members read signals directly from Firebase.</p></div></aside></div>
+        <aside className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MT5 Â· PYTHON ENGINE</span><h2>Signal relay</h2></div><Radio size={16} color="#63736a" /></div><div className="relay-body"><div className={`relay-status ${relayEnabled ? 'running' : ''}`}><i />{relayEnabled ? 'Relay is polling every 5 seconds' : 'Relay is stopped'}</div><label className="field-label" htmlFor="relay-symbol" style={{ display: 'block', marginTop: 16, color: '#78827c', fontSize: 9 }}>MT5 SYMBOL</label><div className="symbol-picker" style={{ marginTop: 6, width: '100%' }}><input id="relay-symbol" value={relaySymbol} disabled={relayEnabled} onChange={(event) => setRelaySymbol(event.target.value.toUpperCase())} aria-label="Relay symbol" /><button type="button" title="Reset symbol" aria-label="Reset symbol" disabled={relayEnabled} onClick={() => setRelaySymbol('GOLD')}><RefreshCw size={13} /></button></div><button className={`relay-button ${relayEnabled ? 'stop' : ''}`} type="button" disabled={(!relayEnabled && !validRelaySymbol) || !adminUids.size || (!relayEnabled && !relayApiAvailable)} onClick={() => setRelayEnabled((enabled) => !enabled)}>{relayEnabled ? 'Stop relay' : 'Start signal relay'}</button>{!relayApiAvailable && <small className="password-message">Start the relay from the local admin page on the MT5 laptop, not this hosted page.</small>}{!validRelaySymbol && <small className="password-message">Use 2â€“20 letters, numbers, dots, underscores or hyphens.</small>}{relayError && <div className="admin-error" role="alert">{relayError}</div>}<div className="relay-meta"><span>LAST CHECK <strong>{relayUpdated}</strong></span><span>PUBLISHED SIGNALS <strong>{signalCount}</strong></span></div><p className="relay-note">Keep the local admin page open on the MT5 laptop while the relay is active. It sends signals every 5 seconds and chart candles to Firebase every 30 seconds. Approved members read both directly from Firebase.</p></div></aside></div>
       <div className="desk-disclaimer"><ShieldCheck size={14} /><span>Admin identity is checked against the configured UID; database rules must use the same UID. Never expose a Firebase service-account key in this website.</span></div>
     </main>
   </div>
 }
 
 function UserRow({ item, busy, onApprove, onRevoke }: { item: ManagedUser; busy: boolean; onApprove: () => void; onRevoke: () => void }) {
-  return <div className="user-row"><div className="user-cell"><strong>{item.fullName || 'Unnamed account'}</strong><small>{item.email}</small></div><div className="user-cell"><strong>{item.phone || '—'}</strong><small>Registered member</small></div><div className="user-cell"><strong>{maskNic(item.nic || '')}</strong></div><span className={`user-status ${item.status}`}>{item.status}</span><div className="row-actions">{item.status === 'approved' ? <button className="deny" type="button" disabled={busy} onClick={onRevoke}><UserX size={12} /> Revoke</button> : <><button type="button" disabled={busy} onClick={onApprove}><UserCheck size={12} /> Approve</button>{item.status !== 'denied' && <button className="deny" type="button" disabled={busy} onClick={onRevoke}><UserX size={12} /> Deny</button>}</>}</div></div>
+  return <div className="user-row"><div className="user-cell"><strong>{item.fullName || 'Unnamed account'}</strong><small>{item.email}</small></div><div className="user-cell"><strong>{item.phone || 'â€”'}</strong><small>Registered member</small></div><div className="user-cell"><strong>{maskNic(item.nic || '')}</strong></div><span className={`user-status ${item.status}`}>{item.status}</span><div className="row-actions">{item.status === 'approved' ? <button className="deny" type="button" disabled={busy} onClick={onRevoke}><UserX size={12} /> Revoke</button> : <><button type="button" disabled={busy} onClick={onApprove}><UserCheck size={12} /> Approve</button>{item.status !== 'denied' && <button className="deny" type="button" disabled={busy} onClick={onRevoke}><UserX size={12} /> Deny</button>}</>}</div></div>
 }
 
 function Brand() {
@@ -139,5 +153,5 @@ function Brand() {
 }
 
 function maskNic(nic: string) {
-  return nic.length > 4 ? `${'•'.repeat(nic.length - 4)}${nic.slice(-4)}` : nic || '—'
+  return nic.length > 4 ? `${'â€¢'.repeat(nic.length - 4)}${nic.slice(-4)}` : nic || 'â€”'
 }

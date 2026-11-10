@@ -194,6 +194,25 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   }, [symbol, user])
 
   useEffect(() => {
+    if (profilesDb) {
+      setChartState('Waiting for chart data from the MT5 laptop')
+      return onValue(ref(profilesDb, `market/${signalSymbolKey(symbol)}`), (snapshot) => {
+        const value = snapshot.val() as { candles?: Record<string, Candle> | Candle[]; updatedAt?: number } | null
+        const storedCandles = value?.candles
+        const nextCandles = Array.isArray(storedCandles)
+          ? storedCandles
+          : storedCandles && typeof storedCandles === 'object'
+            ? Object.values(storedCandles)
+            : []
+        setCandles(nextCandles.filter(isCandle).sort((a, b) => a.time - b.time))
+        setChartState(nextCandles.length ? '' : 'Waiting for chart data from the MT5 laptop')
+        setUpdatedAt(value?.updatedAt ? new Date(value.updatedAt * 1000) : null)
+      }, (reason) => {
+        setCandles([])
+        setChartState(`Could not read chart data from Firebase: ${reason.message}`)
+      })
+    }
+
     const controller = new AbortController()
     let mounted = true
     const loadChart = async () => {
@@ -342,6 +361,17 @@ function isSignal(value: unknown): value is Signal {
   if (!value || typeof value !== 'object') return false
   const signal = value as Partial<Signal>
   return (signal.direction === 'buy' || signal.direction === 'sell') && typeof signal.entry_time === 'number' && typeof signal.entry === 'number' && typeof signal.stop === 'number'
+}
+
+function isCandle(value: unknown): value is Candle {
+  if (!value || typeof value !== 'object') return false
+  const candle = value as Partial<Candle>
+  return typeof candle.time === 'number'
+    && typeof candle.open === 'number'
+    && typeof candle.high === 'number'
+    && typeof candle.low === 'number'
+    && typeof candle.close === 'number'
+    && typeof candle.volume === 'number'
 }
 
 function firebaseMessage(reason: unknown) {

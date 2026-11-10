@@ -58,6 +58,11 @@ class SignalPublishRequest(BaseModel):
     symbol: str = Field(min_length=2, max_length=20)
     signals: list[dict] = Field(default_factory=list)
 
+
+class MarketPublishRequest(BaseModel):
+    symbol: str = Field(min_length=2, max_length=20)
+
+
 app = FastAPI(title="MyView MT5 Market Data", version="1.0.0")
 FRONTEND_DIST = (
     Path(sys._MEIPASS) / "dist"
@@ -446,6 +451,28 @@ def publish_signals(
     )[-80:]
     signal_ref.set(dict(recent))
     return {"symbol": symbol, "count": len(recent)}
+
+
+@app.post("/api/market/publish")
+def publish_market_data(
+    payload: MarketPublishRequest,
+    _access: None = Depends(require_admin_access),
+) -> dict:
+    symbol = payload.symbol.strip().upper()
+    symbol_key = firebase_symbol_key(symbol)
+    end = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    start = end - 7 * 24 * 60 * 60
+    bars = fetch_bars(symbol, "5m", start, end)
+    if not bars:
+        raise HTTPException(status_code=502, detail="MT5 returned no chart history for this symbol")
+
+    candles = {str(int(bar["time"])): bar for bar in bars}
+    signal_app = get_signals_firebase_app()
+    firebase_db.reference(f"market/{symbol_key}", app=signal_app).set({
+        "candles": candles,
+        "updatedAt": end,
+    })
+    return {"symbol": symbol, "count": len(candles), "updatedAt": end}
 
 
 @app.get("/api/signals/history")

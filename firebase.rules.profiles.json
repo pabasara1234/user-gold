@@ -22,6 +22,12 @@
         ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
         ".write": false
       }
+    },
+    "market": {
+      "$symbol": {
+        ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
+        ".write": false
+      }
     }
   }
 }
