@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const APP_URL = 'http://127.0.0.1:8000/marketlab.html'
+const API_URL = new URL('/openapi.json', APP_URL).toString()
 const STARTUP_TIMEOUT_MS = 60_000
 let backendProcess = null
 let backendLog = null
@@ -70,7 +71,7 @@ async function startBackend() {
 
 async function isMyViewServerReady() {
   try {
-    const response = await fetch(`${APP_URL}/openapi.json`, { signal: AbortSignal.timeout(1500) })
+    const response = await fetch(API_URL, { signal: AbortSignal.timeout(1500) })
     if (!response.ok) return false
     const api = await response.json()
     return api.title === 'MyView MT5 Market Data'
@@ -81,7 +82,7 @@ async function isMyViewServerReady() {
 
 async function isPortOccupied() {
   try {
-    await fetch(APP_URL, { signal: AbortSignal.timeout(1500) })
+    await fetch(new URL('/', APP_URL), { signal: AbortSignal.timeout(1500) })
     return true
   } catch {
     return false

@@ -16,6 +16,7 @@ The production build contains two separate website entries: the approved-member 
   $env:FIREBASE_PROFILES_DATABASE_URL = 'https://website-sign-in-dbc96-default-rtdb.firebaseio.com'
   $env:FIREBASE_ADMIN_UIDS = 'LmimXySoBHbywGG91I4ozMECPy12'
   $env:MYVIEW_REQUIRE_AUTH = 'true'
+  $env:MYVIEW_ALLOW_LOCAL_ACCESS = 'true'
   $env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\website-sign-in-service-account.json'
   Set-Location api
   ..\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000

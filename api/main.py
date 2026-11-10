@@ -44,6 +44,7 @@ FIREBASE_ADMIN_UIDS = {
     if uid.strip()
 }
 MYVIEW_REQUIRE_AUTH = os.getenv("MYVIEW_REQUIRE_AUTH", "false").lower() == "true"
+MYVIEW_ALLOW_LOCAL_ACCESS = os.getenv("MYVIEW_ALLOW_LOCAL_ACCESS", "false").lower() == "true"
 MYVIEW_CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv("MYVIEW_CORS_ORIGINS", "").split(",")
@@ -99,11 +100,9 @@ def get_signals_firebase_app():
     return app
 
 
-def require_market_access(request: Request) -> None:
+def verify_firebase_uid(request: Request) -> str:
     if not FIREBASE_PROJECT_ID:
-        if MYVIEW_REQUIRE_AUTH:
-            raise HTTPException(status_code=503, detail="Firebase API authentication is not configured")
-        return
+        raise HTTPException(status_code=503, detail="Firebase API authentication is not configured")
 
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
@@ -116,20 +115,35 @@ def require_market_access(request: Request) -> None:
             raise ValueError("Firebase API authentication is not configured")
         claims = firebase_auth.verify_id_token(token, app=admin_app, check_revoked=True)
         uid = str(claims["uid"])
-        if uid not in FIREBASE_ADMIN_UIDS:
-            profile = firebase_db.reference(f"users/{uid}", app=admin_app).get()
-            if not isinstance(profile, dict) or profile.get("status") != "approved":
-                raise HTTPException(status_code=403, detail="Administrator approval is required")
         request.state.firebase_uid = uid
+        return uid
     except HTTPException:
         raise
     except Exception as error:
         raise HTTPException(status_code=401, detail="Firebase sign-in could not be verified") from error
 
 
+def require_market_access(request: Request) -> None:
+    client_host = request.client.host if request.client else ""
+    if MYVIEW_ALLOW_LOCAL_ACCESS and client_host in {"127.0.0.1", "::1"}:
+        return
+
+    if not FIREBASE_PROJECT_ID:
+        if MYVIEW_REQUIRE_AUTH:
+            raise HTTPException(status_code=503, detail="Firebase API authentication is not configured")
+        return
+
+    uid = verify_firebase_uid(request)
+    if uid not in FIREBASE_ADMIN_UIDS:
+        profile = firebase_db.reference(f"users/{uid}", app=get_firebase_app()).get()
+        if not isinstance(profile, dict) or profile.get("status") != "approved":
+            raise HTTPException(status_code=403, detail="Administrator approval is required")
+
+
 def require_admin_access(request: Request) -> None:
     require_market_access(request)
-    if getattr(request.state, "firebase_uid", None) not in FIREBASE_ADMIN_UIDS:
+    uid = getattr(request.state, "firebase_uid", None) or verify_firebase_uid(request)
+    if uid not in FIREBASE_ADMIN_UIDS:
         raise HTTPException(status_code=403, detail="Administrator access is required")
 
 
