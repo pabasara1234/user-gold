@@ -15,9 +15,14 @@ export const firebaseReady = Object.values(config).every(Boolean) && Boolean(pro
 const app = firebaseReady
   ? getApps().length ? getApp() : initializeApp(config)
   : null
+const adminApp = app
+  ? getApps().find((candidate) => candidate.name === 'admin-session') ?? initializeApp(config, 'admin-session')
+  : null
 
 export const auth: Auth | null = app ? getAuth(app) : null
+export const adminAuth: Auth | null = adminApp ? getAuth(adminApp) : null
 export const profilesDb: Database | null = app && profilesUrl ? getDatabase(app, profilesUrl) : null
+export const adminProfilesDb: Database | null = adminApp && profilesUrl ? getDatabase(adminApp, profilesUrl) : null
 export const adminUids = new Set((import.meta.env.VITE_FIREBASE_ADMIN_UIDS ?? '').split(',').map((uid) => uid.trim()).filter(Boolean))
 
 export function signalSymbolKey(symbol: string) {

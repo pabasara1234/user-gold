@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   EmailAuthProvider,
+  browserSessionPersistence,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
+  setPersistence,
   signInWithEmailAndPassword,
   signOut,
   updatePassword,
@@ -12,21 +14,26 @@ import {
   type User,
 } from 'firebase/auth'
 import { onValue, ref, serverTimestamp, set, type Unsubscribe } from 'firebase/database'
-import { adminUids, auth, firebaseReady, profilesDb } from './firebase'
+import { adminAuth, adminProfilesDb, adminUids, auth, firebaseReady, profilesDb } from './firebase'
 import { AuthContext, type AuthContextValue, type UserProfile } from './auth-context'
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children, session = 'user' }: { children: ReactNode; session?: 'user' | 'admin' }) {
+  const activeAuth = session === 'admin' ? adminAuth : auth
+  const activeProfilesDb = session === 'admin' ? adminProfilesDb : profilesDb
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(firebaseReady)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!auth || !profilesDb) {
+    if (!activeAuth || !activeProfilesDb) {
       return
     }
     let profileUnsubscribe: Unsubscribe | undefined
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+    let unsubscribe: Unsubscribe | undefined
+    let disposed = false
+    const watchAuth = () => {
+      unsubscribe = onAuthStateChanged(activeAuth, (nextUser) => {
       profileUnsubscribe?.()
       setUser(nextUser)
       setProfile(null)
@@ -35,19 +42,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
       setLoading(true)
-      profileUnsubscribe = onValue(ref(profilesDb, `users/${nextUser.uid}`), (snapshot) => {
+      profileUnsubscribe = onValue(ref(activeProfilesDb, `users/${nextUser.uid}`), (snapshot) => {
         setProfile(snapshot.exists() ? snapshot.val() as UserProfile : null)
         setLoading(false)
       }, () => {
         setError('Could not load your account details. Check the Firebase database rules.')
         setLoading(false)
       })
-    })
+      })
+    }
+    if (session === 'admin') {
+      void setPersistence(activeAuth, browserSessionPersistence)
+        .then(() => { if (!disposed) watchAuth() })
+        .catch(() => {
+          setError('Could not start the administrator sign-in session.')
+          setLoading(false)
+        })
+    } else {
+      watchAuth()
+    }
     return () => {
-      unsubscribe()
+      disposed = true
+      unsubscribe?.()
       profileUnsubscribe?.()
     }
-  }, [])
+  }, [activeAuth, activeProfilesDb, session])
 
   const value: AuthContextValue = {
     user,
@@ -56,18 +75,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error,
     isAdmin: Boolean(user && adminUids.has(user.uid)),
     login: async (email, password) => {
-      if (!auth) throw new Error('Firebase is not configured.')
-      await signInWithEmailAndPassword(auth, email.trim(), password)
+      if (!activeAuth) throw new Error('Firebase is not configured.')
+      await signInWithEmailAndPassword(activeAuth, email.trim(), password)
     },
     resetPassword: async (email) => {
-      if (!auth) throw new Error('Firebase is not configured.')
-      await sendPasswordResetEmail(auth, email.trim())
+      if (!activeAuth) throw new Error('Firebase is not configured.')
+      await sendPasswordResetEmail(activeAuth, email.trim())
     },
     register: async (details, password) => {
-      if (!auth || !profilesDb) throw new Error('Firebase is not configured.')
-      const credential = await createUserWithEmailAndPassword(auth, details.email.trim(), password)
+      if (!activeAuth || !activeProfilesDb) throw new Error('Firebase is not configured.')
+      const credential = await createUserWithEmailAndPassword(activeAuth, details.email.trim(), password)
       await updateProfile(credential.user, { displayName: details.fullName.trim() })
-      await set(ref(profilesDb, `users/${credential.user.uid}`), {
+      await set(ref(activeProfilesDb, `users/${credential.user.uid}`), {
         ...details,
         uid: credential.user.uid,
         fullName: details.fullName.trim(),
@@ -78,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     },
     logout: async () => {
-      if (auth) await signOut(auth)
+      if (activeAuth) await signOut(activeAuth)
     },
     changePassword: async (currentPassword, newPassword) => {
       if (!user?.email) throw new Error('Sign in with an email account before changing your password.')

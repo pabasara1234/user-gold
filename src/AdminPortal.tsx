@@ -3,7 +3,7 @@ import { onValue, ref, update, serverTimestamp } from 'firebase/database'
 import { CircleAlert, LogOut, Radio, RefreshCw, ShieldCheck, UserCheck, UserX } from 'lucide-react'
 import { AuthProvider } from './auth'
 import { useAuth, type UserProfile } from './auth-context'
-import { adminUids, firebaseReady, profilesDb } from './firebase'
+import { adminProfilesDb, adminUids, firebaseReady } from './firebase'
 import { apiUrl, appPath } from './deployment'
 
 type ManagedUser = UserProfile & { reviewedAt?: number }
@@ -19,7 +19,7 @@ function AdminRoot() {
 }
 
 export default function AdminPortal() {
-  return <AuthProvider><AdminRoot /></AuthProvider>
+  return <AuthProvider session="admin"><AdminRoot /></AuthProvider>
 }
 
 function AdminLogin({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
@@ -59,8 +59,8 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   const validRelaySymbol = /^[A-Z0-9._-]{2,20}$/.test(relaySymbol)
 
   useEffect(() => {
-    if (!profilesDb) return
-    return onValue(ref(profilesDb, 'users'), (snapshot) => {
+    if (!adminProfilesDb) return
+    return onValue(ref(adminProfilesDb, 'users'), (snapshot) => {
       const value = snapshot.val() as Record<string, ManagedUser> | null
       setUsers(value ? Object.values(value).filter((item) => item && typeof item.uid === 'string') : [])
       setError('')
@@ -68,12 +68,12 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   }, [])
 
   async function setAccess(target: ManagedUser, status: 'approved' | 'denied' | 'disabled') {
-    if (!profilesDb || !user) return
+    if (!adminProfilesDb || !user) return
     setWorkingUid(target.uid)
     setError('')
     setNotice('')
     try {
-      await update(ref(profilesDb, `users/${target.uid}`), { status, reviewedAt: serverTimestamp(), reviewedBy: user.uid })
+      await update(ref(adminProfilesDb, `users/${target.uid}`), { status, reviewedAt: serverTimestamp(), reviewedBy: user.uid })
       setNotice(`${target.fullName} access ${status === 'approved' ? 'approved' : 'revoked'}.`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not update user access.')
