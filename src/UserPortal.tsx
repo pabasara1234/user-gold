@@ -9,6 +9,7 @@ import {
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type Time,
+  TickMarkType,
 } from 'lightweight-charts'
 import { onValue, ref } from 'firebase/database'
 import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, LogOut, LockKeyhole, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react'
@@ -31,6 +32,45 @@ type Signal = {
 }
 type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number }
 type SessionSummary = { target_r: number; session: string; summary: { wins: number; losses: number; trades: number; win_rate: number } }
+
+function chartDate(time: Time) {
+  if (typeof time === 'number') return new Date(time * 1000)
+  if (typeof time === 'string') return new Date(time)
+  return new Date(Date.UTC(time.year, time.month - 1, time.day))
+}
+
+function formatColomboTime(time: Time) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Colombo',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(chartDate(time))
+}
+
+function formatColomboTick(time: Time, tickMarkType: TickMarkType) {
+  const date = chartDate(time)
+  if (tickMarkType === TickMarkType.Year) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', year: 'numeric' }).format(date)
+  }
+  if (tickMarkType === TickMarkType.Month) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', month: 'short' }).format(date)
+  }
+  if (tickMarkType === TickMarkType.DayOfMonth) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', day: '2-digit', month: 'short' }).format(date)
+  }
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Colombo',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(tickMarkType === TickMarkType.TimeWithSeconds ? { second: '2-digit' } : {}),
+    hourCycle: 'h23',
+  }).format(date)
+}
 
 function Portal() {
   const authState = useAuth()
@@ -274,9 +314,10 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
     const chart = createChart(chartNode.current, {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: '#080f1e' }, textColor: '#9aacc5', fontFamily: 'DM Mono, monospace', fontSize: 10 },
+      localization: { locale: 'en-GB', timeFormatter: formatColomboTime },
       grid: { vertLines: { color: '#1b2b43' }, horzLines: { color: '#1b2b43' } },
       rightPriceScale: { borderColor: '#263b58' },
-      timeScale: { borderColor: '#263b58', timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: '#263b58', timeVisible: true, secondsVisible: false, tickMarkFormatter: formatColomboTick },
       crosshair: { vertLine: { color: '#52708f' }, horzLine: { color: '#52708f' } },
     })
     const series = chart.addSeries(CandlestickSeries, {
