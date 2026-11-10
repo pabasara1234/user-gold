@@ -260,21 +260,21 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
     if (!chartNode.current || !candles.length) return
     const chart = createChart(chartNode.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#111b18' }, textColor: '#98aaa1', fontFamily: 'DM Mono, monospace', fontSize: 10 },
-      grid: { vertLines: { color: '#1d2a25' }, horzLines: { color: '#1d2a25' } },
-      rightPriceScale: { borderColor: '#28352f' },
-      timeScale: { borderColor: '#28352f', timeVisible: true, secondsVisible: false },
-      crosshair: { vertLine: { color: '#52645a' }, horzLine: { color: '#52645a' } },
+      layout: { background: { type: ColorType.Solid, color: '#080f1e' }, textColor: '#9aacc5', fontFamily: 'DM Mono, monospace', fontSize: 10 },
+      grid: { vertLines: { color: '#1b2b43' }, horzLines: { color: '#1b2b43' } },
+      rightPriceScale: { borderColor: '#263b58' },
+      timeScale: { borderColor: '#263b58', timeVisible: true, secondsVisible: false },
+      crosshair: { vertLine: { color: '#52708f' }, horzLine: { color: '#52708f' } },
     })
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#54b58c', downColor: '#e67e65', borderVisible: false,
-      wickUpColor: '#54b58c', wickDownColor: '#e67e65',
+      upColor: '#70c8ff', downColor: '#ff6678', borderVisible: false,
+      wickUpColor: '#70c8ff', wickDownColor: '#ff6678',
     })
     series.setData(candles.map((candle) => ({ ...candle, time: candle.time as UTCTimestamp })))
     const markers = signals.filter((signal) => candles.some((bar) => bar.time === signal.entry_time)).map((signal) => ({
       time: signal.entry_time as UTCTimestamp,
       position: signal.direction === 'buy' ? 'belowBar' as const : 'aboveBar' as const,
-      color: signal.direction === 'buy' ? '#6bd3a6' : '#f08c73',
+      color: signal.direction === 'buy' ? '#10c9b0' : '#ff6678',
       shape: signal.direction === 'buy' ? 'arrowUp' as const : 'arrowDown' as const,
       text: signal.direction.toUpperCase(),
     }))
@@ -322,7 +322,7 @@ function Level({ label, value }: { label: string; value: number }) {
 function SessionCard({ session, item }: { session: string; item?: SessionSummary }) {
   const trades = item?.summary.trades ?? 0
   const winRate = trades ? Math.max(0, Math.min(100, item?.summary.win_rate ?? 0)) : 0
-  return <article className="session-card"><div className="session-card-top"><strong>{session}</strong><span>{trades} trades</span></div><div className="session-stat-row"><div className="win-donut" style={{ background: trades ? `conic-gradient(#34876b ${winRate}%, #e17861 0)` : 'conic-gradient(#dce2dd 100%, #dce2dd 0)' }}><div>{trades ? `${winRate.toFixed(0)}%` : '—'}</div></div><div className="session-counts"><span><i className="win-dot" />Wins <b>{item?.summary.wins ?? 0}</b></span><span><i className="loss-dot" />Losses <b>{item?.summary.losses ?? 0}</b></span></div></div><div className="session-card-foot"><span>WIN RATE</span><span>{trades ? `${winRate.toFixed(1)}%` : 'NO DATA'}</span></div></article>
+  return <article className="session-card"><div className="session-card-top"><strong>{session}</strong><span>{trades} trades</span></div><div className="session-stat-row"><div className="win-donut" style={{ background: trades ? `conic-gradient(#10c9b0 ${winRate}%, #ff6678 0)` : 'conic-gradient(#263b58 100%, #263b58 0)' }}><div>{trades ? `${winRate.toFixed(0)}%` : '—'}</div></div><div className="session-counts"><span><i className="win-dot" />Wins <b>{item?.summary.wins ?? 0}</b></span><span><i className="loss-dot" />Losses <b>{item?.summary.losses ?? 0}</b></span></div></div><div className="session-card-foot"><span>WIN RATE</span><span>{trades ? `${winRate.toFixed(1)}%` : 'NO DATA'}</span></div></article>
 }
 
 function ProfileDialog({ profile, onClose }: { profile: UserProfile; onClose: () => void }) {
