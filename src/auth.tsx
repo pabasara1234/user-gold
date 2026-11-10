@@ -13,7 +13,7 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { get, onValue, ref, serverTimestamp, set, type Unsubscribe } from 'firebase/database'
+import { onValue, ref, serverTimestamp, set, type Unsubscribe } from 'firebase/database'
 import { adminAuth, adminProfilesDb, adminUids, auth, firebaseReady, profilesDb } from './firebase'
 import { AuthContext, type AuthContextValue, type UserProfile } from './auth-context'
 
@@ -75,23 +75,8 @@ export function AuthProvider({ children, session = 'user' }: { children: ReactNo
     error,
     isAdmin: Boolean(user && adminUids.has(user.uid)),
     login: async (email, password) => {
-      if (!activeAuth || !activeProfilesDb) throw new Error('Firebase is not configured.')
-      const credential = await signInWithEmailAndPassword(activeAuth, email.trim(), password)
-      if (adminUids.has(credential.user.uid)) return
-
-      let approved = false
-      try {
-        const snapshot = await get(ref(activeProfilesDb, `users/${credential.user.uid}`))
-        approved = snapshot.exists() && (snapshot.val() as UserProfile).status === 'approved'
-      } catch {
-        await signOut(activeAuth)
-        throw new Error('Could not verify account access. Check the Firebase database rules.')
-      }
-
-      if (!approved) {
-        await signOut(activeAuth)
-        throw new Error('Administrator approval is required before signing in.')
-      }
+      if (!activeAuth) throw new Error('Firebase is not configured.')
+      await signInWithEmailAndPassword(activeAuth, email.trim(), password)
     },
     resetPassword: async (email) => {
       if (!activeAuth) throw new Error('Firebase is not configured.')
