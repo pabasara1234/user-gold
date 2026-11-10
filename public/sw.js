@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nextgen-gold-shell-v2'
+const CACHE_NAME = 'nextgen-gold-shell-v3'
 const APP_BASE = new URL('./', self.location.href).pathname
 const APP_SHELL = [
   APP_BASE,
@@ -23,6 +23,42 @@ self.addEventListener('activate', (event) => {
           .map((name) => caches.delete(name)),
       ))
       .then(() => self.clients.claim()),
+  )
+})
+
+self.addEventListener('push', (event) => {
+  let payload = {}
+  const text = event.data?.text() ?? ''
+  if (text) {
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      payload = { body: text }
+    }
+  }
+  const title = typeof payload.title === 'string' ? payload.title : 'NextGen Gold signal'
+  const options = {
+    body: typeof payload.body === 'string' ? payload.body : 'A new market signal is available.',
+    icon: `${APP_BASE}nextgen-gold-app.png`,
+    badge: `${APP_BASE}nextgen-gold-app.png`,
+    tag: typeof payload.tag === 'string' ? payload.tag : 'nextgen-gold-signal',
+    data: { url: APP_BASE },
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find((client) => new URL(client.url).origin === self.location.origin)
+      if (existing) {
+        const target = new URL(APP_BASE, self.location.origin).href
+        const navigation = existing.url === target ? Promise.resolve(existing) : existing.navigate(target)
+        return navigation.then((client) => client?.focus())
+      }
+      return self.clients.openWindow(APP_BASE)
+    }),
   )
 })
 

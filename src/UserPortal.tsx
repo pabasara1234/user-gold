@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   CandlestickSeries,
   ColorType,
@@ -11,8 +11,8 @@ import {
   type Time,
   TickMarkType,
 } from 'lightweight-charts'
-import { onValue, ref } from 'firebase/database'
-import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, LogOut, LockKeyhole, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react'
+import { get, onValue, ref, remove, set } from 'firebase/database'
+import { Activity, ArrowDownRight, ArrowUpRight, Bell, CircleAlert, LogOut, LockKeyhole, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react'
 import { AuthProvider } from './auth'
 import { useAuth, type UserProfile } from './auth-context'
 import { firebaseReady, profilesDb, signalSymbolKey } from './firebase'
@@ -195,20 +195,66 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   const [chartState, setChartState] = useState('Loading market data')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMessage, setPushMessage] = useState('')
+  const [signalNotice, setSignalNotice] = useState<Signal | null>(null)
   const chartNode = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const renderedCandlesRef = useRef<Candle[]>([])
   const chartInitializedRef = useRef(false)
+  const seenSignalIdsRef = useRef<{ symbol: string; ids: Set<string> } | null>(null)
   const latestSignals = useMemo(() => [...signals].sort((a, b) => b.entry_time - a.entry_time).slice(0, 3), [signals])
+
+  useEffect(() => {
+    let active = true
+    if (!import.meta.env.PROD) return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return
+    void navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then(async (subscription) => {
+        if (!subscription || !user) {
+          if (active) setPushEnabled(false)
+          return
+        }
+        if (!profilesDb) throw new Error('Firebase is not configured for browser notifications.')
+        const snapshot = await get(ref(profilesDb, `users/${user.uid}/pushSubscriptions`))
+        const subscriptions = readPushSubscriptions(snapshot.val())
+        const isRegistered = subscriptions.some((item) => item.endpoint === subscription.endpoint)
+        if (active) setPushEnabled(Notification.permission === 'granted' && isRegistered)
+      })
+      .catch((reason: unknown) => {
+        if (active) setPushMessage(reason instanceof Error ? reason.message : 'Could not check browser notification settings.')
+      })
+    return () => { active = false }
+  }, [user])
+
+  const updateSignals = useCallback((incomingSignals: unknown[]) => {
+    const nextSignals = incomingSignals.filter(isSignal).sort((a, b) => a.entry_time - b.entry_time).slice(-3)
+    const ids = new Set(nextSignals.map((signal) => `${signal.entry_time}_${signal.direction}`))
+    const previous = seenSignalIdsRef.current
+    seenSignalIdsRef.current = { symbol, ids }
+    if (previous?.symbol === symbol) {
+      const newSignal = nextSignals.slice().reverse().find((signal) => !previous.ids.has(`${signal.entry_time}_${signal.direction}`))
+      if (newSignal) {
+        setSignalNotice(newSignal)
+        const signalId = `${newSignal.entry_time}_${newSignal.direction}`
+        window.setTimeout(() => setSignalNotice((current) => (
+          current && `${current.entry_time}_${current.direction}` === signalId ? null : current
+        )), 10_000)
+      }
+    }
+    setSignals(nextSignals)
+  }, [symbol])
 
   useEffect(() => {
     if (profilesDb) {
       return onValue(ref(profilesDb, `signals/${signalSymbolKey(symbol)}`), (snapshot) => {
         const value = snapshot.val()
         const nextSignals = value && typeof value === 'object' ? Object.values(value) : []
-        setSignals(nextSignals.filter(isSignal).sort((a, b) => a.entry_time - b.entry_time).slice(-3))
+        updateSignals(nextSignals)
         setSignalFeedError('')
       }, (reason) => {
         setSignals([])
@@ -230,7 +276,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
         })
         if (!response.ok) throw new Error('Could not load approved signal feed.')
         const data = await response.json() as { signals: Signal[] }
-        if (active) setSignals((data.signals ?? []).filter(isSignal).sort((a, b) => a.entry_time - b.entry_time).slice(-3))
+        if (active) updateSignals(data.signals ?? [])
       } catch {
         if (active && !controller.signal.aborted) setSignals([])
       } finally {
@@ -240,7 +286,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
     void loadSignals()
     const interval = window.setInterval(() => void loadSignals(), 5_000)
     return () => { active = false; controller.abort(); window.clearInterval(interval) }
-  }, [symbol, user])
+  }, [symbol, updateSignals, user])
 
   useEffect(() => {
     if (profilesDb) {
@@ -376,11 +422,97 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   function chooseSymbol(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const next = symbolInput.trim().toUpperCase()
-    if (/^[A-Z0-9._-]{2,20}$/.test(next)) setSymbol(next)
+    if (/^[A-Z0-9._-]{2,20}$/.test(next)) {
+      setSignals([])
+      setSymbol(next)
+    }
+  }
+
+  async function toggleBrowserNotifications() {
+    if (!import.meta.env.PROD) {
+      setPushMessage('Browser push can be enabled on the deployed HTTPS website.')
+      return
+    }
+    if (!user || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      setPushMessage('Browser notifications are not supported here.')
+      return
+    }
+    if (!profilesDb) {
+      setPushMessage('Firebase is not configured for browser notifications.')
+      return
+    }
+    const vapidPublicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY
+    if (!vapidPublicKey) {
+      setPushMessage('Browser push is not configured yet. Contact the administrator.')
+      return
+    }
+    setPushBusy(true)
+    setPushMessage('')
+    try {
+      const registration = await navigator.serviceWorker.ready
+      let subscription = await registration.pushManager.getSubscription()
+      if (subscription && pushEnabled) {
+        const snapshot = await get(ref(profilesDb, `users/${user.uid}/pushSubscriptions`))
+        const stored = readPushSubscriptions(snapshot.val())
+        const slot = stored.find((item) => item.endpoint === subscription!.endpoint)?.slot
+        if (slot) await remove(ref(profilesDb, `users/${user.uid}/pushSubscriptions/${slot}`))
+        await subscription.unsubscribe()
+        setPushEnabled(false)
+        setPushMessage('Browser notifications are off.')
+        return
+      }
+
+      const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission()
+      if (permission !== 'granted') {
+        setPushMessage(permission === 'denied' ? 'Allow notifications in your browser settings to enable alerts.' : 'Notification permission was not granted.')
+        return
+      }
+
+      let createdSubscription = false
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeVapidPublicKey(vapidPublicKey),
+        })
+        createdSubscription = true
+      }
+      const serialized = subscription.toJSON()
+      const endpoint = serialized.endpoint
+      const p256dh = serialized.keys?.p256dh
+      const auth = serialized.keys?.auth
+      if (!endpoint || !p256dh || !auth) throw new Error('The browser returned an incomplete push subscription.')
+      const snapshot = await get(ref(profilesDb, `users/${user.uid}/pushSubscriptions`))
+      const stored = readPushSubscriptions(snapshot.val())
+      const existingSlot = stored.find((item) => item.endpoint === endpoint)?.slot
+      const slot = existingSlot ?? Array.from({ length: 10 }, (_, index) => `slot_${index}`)
+        .find((candidate) => !stored.some((item) => item.slot === candidate))
+      if (!slot) {
+        if (createdSubscription) await subscription.unsubscribe()
+        throw new Error('Browser notifications are enabled on the maximum of 10 devices for this account.')
+      }
+      try {
+        await set(ref(profilesDb, `users/${user.uid}/pushSubscriptions/${slot}`), {
+          endpoint,
+          keys: { p256dh, auth },
+        })
+      } catch (reason) {
+        if (createdSubscription) await subscription.unsubscribe()
+        throw reason
+      }
+      setPushEnabled(true)
+      setPushMessage('Browser notifications are on.')
+    } catch (reason) {
+      setPushMessage(reason instanceof Error ? reason.message : 'Could not update browser notification settings.')
+    } finally {
+      setPushBusy(false)
+    }
   }
 
   return <div className="desk-shell">
-    <header className="desk-topbar"><a className="brand" href={appPath()} aria-label="NextGen Gold Signal Desk"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span>{isAdmin && <a className="icon-control" href={appPath('admin.html')} aria-label="Admin management" title="Admin management"><ShieldCheck size={16} /></a>}<button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
+    <header className="desk-topbar"><a className="brand" href={appPath()} aria-label="NextGen Gold Signal Desk"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span>{isAdmin && <a className="icon-control" href={appPath('admin.html')} aria-label="Admin management" title="Admin management"><ShieldCheck size={16} /></a>}<button className={`icon-control ${pushEnabled ? 'alerts-enabled' : ''}`} type="button" aria-label={pushEnabled ? 'Turn off browser notifications' : 'Enable browser notifications'} title={pushEnabled ? 'Browser notifications enabled' : 'Enable browser notifications'} onClick={() => void toggleBrowserNotifications()} disabled={pushBusy}><Bell size={16} /></button><button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
+    {pushMessage && <div className="notification-preference" role="status">{pushMessage}<button type="button" aria-label="Dismiss notification message" onClick={() => setPushMessage('')}><X size={14} /></button></div>}
     <main className="desk-content">
       <div className="desk-title-row"><div><span className="eyebrow">MARKET OVERVIEW <b>/</b> {symbol}</span><h1>Signal desk</h1><p>Read-only market context and confirmed strategy levels.</p></div><form className="symbol-picker" onSubmit={chooseSymbol}><label htmlFor="symbol-input">SYMBOL</label><input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} aria-label="Market symbol" /><button type="submit" title="Load symbol" aria-label="Load symbol"><RefreshCw size={15} /></button></form></div>
       <section className="market-layout">
@@ -393,6 +525,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       <div className="desk-disclaimer"><CircleAlert size={14} /><span>Signals are informational, not financial advice. NextGen Gold does not place or manage orders. Historical results do not guarantee future outcomes.</span></div>
     </main>
     <footer className="desk-footer"><span>NEXTGEN GOLD SIGNAL DESK</span><span>ASIA/COLOMBO <b>·</b> {profile.fullName}</span></footer>
+    {signalNotice && <div className={`signal-toast ${signalNotice.direction}`} role="status"><span className="signal-toast-icon"><Bell size={16} /></span><span><strong>New {signalNotice.direction.toUpperCase()} signal · {signalNotice.symbol ?? symbol}</strong><small>{signalNotice.setup ?? 'Sweep + BOS'} · Entry {signalNotice.entry.toFixed(2)}</small></span><button type="button" aria-label="Dismiss signal notification" onClick={() => setSignalNotice(null)}><X size={15} /></button></div>}
     {profileOpen && <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} />}
   </div>
 }
@@ -451,6 +584,22 @@ function isSignal(value: unknown): value is Signal {
   if (!value || typeof value !== 'object') return false
   const signal = value as Partial<Signal>
   return (signal.direction === 'buy' || signal.direction === 'sell') && typeof signal.entry_time === 'number' && typeof signal.entry === 'number' && typeof signal.stop === 'number'
+}
+
+function decodeVapidPublicKey(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const decoded = window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+}
+
+function readPushSubscriptions(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value).map(([slot, item]) => ({
+    slot,
+    endpoint: item && typeof item === 'object' && !Array.isArray(item) && 'endpoint' in item && typeof item.endpoint === 'string'
+      ? item.endpoint
+      : null,
+  }))
 }
 
 function isCandle(value: unknown): value is Candle {

@@ -31,6 +31,8 @@ if (-not (Test-Path (Join-Path $frontend 'index.html'))) {
     --collect-all starlette `
     --collect-all uvicorn `
     --collect-all pydantic `
+    --collect-all pywebpush `
+    --collect-all py_vapid `
     --hidden-import uvicorn.logging `
     --hidden-import uvicorn.loops.auto `
     --hidden-import uvicorn.protocols.http.auto `

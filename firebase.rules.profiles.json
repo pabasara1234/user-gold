@@ -14,7 +14,25 @@
         "createdAt": { ".validate": "newData.isNumber()" },
         "reviewedAt": { ".validate": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' && newData.isNumber()" },
         "reviewedBy": { ".validate": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' && newData.isString()" },
-        "$other": { ".validate": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'" }
+        "pushSubscriptions": {
+          "$subscriptionSlot": {
+            ".write": "auth != null && $subscriptionSlot.matches(/^slot_[0-9]$/) && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || (auth.uid === $uid && root.child('users').child($uid).child('status').val() === 'approved'))",
+            ".validate": "newData.hasChildren(['endpoint', 'keys'])",
+            "endpoint": {
+              ".validate": "newData.isString() && newData.val().length <= 4096 && newData.val().matches(/^https:\\/\\//)"
+            },
+            "keys": {
+              ".validate": "newData.hasChildren(['p256dh', 'auth'])",
+              "p256dh": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 512" },
+              "auth": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 256" },
+              "$other": { ".validate": false }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": {
+          ".validate": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || ($other === 'pushSubscriptions' && auth.uid === $uid && root.child('users').child($uid).child('status').val() === 'approved'))"
+        }
       }
     },
     "signals": {

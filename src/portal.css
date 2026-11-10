@@ -89,6 +89,18 @@ button { cursor: pointer; }
 .connection-label i, .feed-live i { width: 6px; height: 6px; border-radius: 50%; background: #4a9b79; box-shadow: 0 0 0 3px #4a9b791a; }
 .icon-control { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 4px; background: white; color: #627068; }
 .icon-control:hover { border-color: #a9c7b7; color: var(--green); }
+.icon-control.alerts-enabled { border-color: #4a9b79; color: #28775f; }
+.icon-control:disabled { opacity: .6; cursor: wait; }
+.notification-preference { position: fixed; z-index: 20; top: 68px; right: 24px; display: flex; align-items: center; gap: 12px; max-width: min(390px, calc(100vw - 32px)); padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); box-shadow: 0 10px 32px #0002; font-size: 11px; }
+.notification-preference button, .signal-toast > button { display: grid; flex: 0 0 auto; place-items: center; padding: 2px; border: 0; background: transparent; color: var(--muted); }
+.signal-toast { position: fixed; z-index: 30; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 12px; width: min(390px, calc(100vw - 32px)); padding: 13px 14px; border: 1px solid #2a665d; border-radius: 9px; background: #0c1729; color: #e0ebfa; box-shadow: 0 12px 40px #0005; }
+.signal-toast.sell { border-color: #7d354a; }
+.signal-toast-icon { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #10313a; color: #4dd8c4; }
+.signal-toast.sell .signal-toast-icon { background: #341a2a; color: #ff8190; }
+.signal-toast > span:nth-child(2) { display: grid; min-width: 0; gap: 4px; }
+.signal-toast strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.signal-toast small { color: #9aacc5; font: 9px var(--mono); }
+.signal-toast > button { margin-left: auto; color: #9aacc5; }
 .desk-content { width: min(1430px, 100%); margin-inline: auto; padding: 28px 26px 30px; }
 .desk-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .desk-title-row h1 { margin: 6px 0 3px; font: 700 25px/1.2 var(--display); letter-spacing: 0; }
