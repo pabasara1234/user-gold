@@ -13,6 +13,8 @@ dist-ssr
 build/
 release/
 *.local
+README.md
+api/engine.py
 .env
 api/.env.backend
 firebase-service-account*.json
