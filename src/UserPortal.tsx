@@ -48,15 +48,19 @@ function SetupNotice() {
 }
 
 function AccessForm() {
-  const { login, register, error, clearError } = useAuth()
+  const { login, register, resetPassword, error, clearError } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [busy, setBusy] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [email, setEmail] = useState('')
   const [formError, setFormError] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setFormError('')
+    setResetMessage('')
     clearError()
     const data = new FormData(event.currentTarget)
     try {
@@ -77,6 +81,24 @@ function AccessForm() {
     }
   }
 
+  async function sendResetLink() {
+    if (!email.trim()) {
+      setFormError('Enter your email address first.')
+      return
+    }
+    setResetBusy(true)
+    setFormError('')
+    setResetMessage('')
+    try {
+      await resetPassword(email)
+      setResetMessage('If this email has an account, a password reset link has been sent.')
+    } catch {
+      setResetMessage('Could not send the reset email. Check your email address and try again.')
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
   return <main className="auth-screen">
     <div className="auth-visual"><div className="visual-grid" /><Brand /><div className="visual-copy"><span className="eyebrow">MT5 · MARKET SIGNALS</span><h1>Read the market.<br /><em>Trade your plan.</em></h1><p>Live setup levels, chart context, and session performance in one quiet workspace.</p></div><div className="visual-foot"><span>MYVIEW SIGNAL DESK</span><span>READ-ONLY MARKET DATA</span></div></div>
     <section className="auth-side"><div className="mobile-brand"><Brand /></div><div className="auth-form-wrap"><span className="eyebrow">{mode === 'login' ? 'MEMBER ACCESS' : 'NEW ACCOUNT'}</span><h2>{mode === 'login' ? 'Welcome back' : 'Request access'}</h2><p className="auth-subtitle">{mode === 'login' ? 'Sign in to your approved account.' : 'Create your profile. An administrator must approve access.'}</p>
@@ -85,12 +107,14 @@ function AccessForm() {
           <label>Full name<input name="fullName" autoComplete="name" required maxLength={100} /></label>
           <div className="form-two"><label>Phone number<input name="phone" autoComplete="tel" type="tel" required maxLength={24} /></label><label>NIC number<input name="nic" autoComplete="off" required minLength={8} maxLength={15} /></label></div>
         </>}
-        <label>Email address<input name="email" autoComplete="email" type="email" required maxLength={254} /></label>
+        <label>Email address<input name="email" autoComplete="email" type="email" required maxLength={254} value={email} onChange={(event) => { setEmail(event.target.value); setResetMessage('') }} /></label>
         <label>Password<input name="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" required minLength={8} /></label>
+        {mode === 'login' && <button className="forgot-password" type="button" disabled={resetBusy} onClick={() => void sendResetLink()}>{resetBusy ? 'Sending reset link…' : 'Forgot password?'}</button>}
         {(formError || error) && <div className="form-error" role="alert"><CircleAlert size={15} />{formError || error}</div>}
+        {resetMessage && <p className="reset-message" role="status">{resetMessage}</p>}
         <button className="primary-button" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
       </form>
-      <div className="auth-switch">{mode === 'login' ? 'Need an account?' : 'Already registered?'} <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setFormError(''); clearError() }}>{mode === 'login' ? 'Request access' : 'Sign in'}</button></div>
+      <div className="auth-switch">{mode === 'login' ? 'Need an account?' : 'Already registered?'} <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setFormError(''); setResetMessage(''); clearError() }}>{mode === 'login' ? 'Request access' : 'Sign in'}</button></div>
       <p className="privacy-note"><LockKeyhole size={13} /> Passwords are handled by Firebase Authentication.</p>
     </div><span className="auth-copyright">MYVIEW MARKET LAB <b>·</b> SIGNALS ARE FOR INFORMATION ONLY</span></section>
   </main>

@@ -4,6 +4,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updatePassword,
@@ -57,6 +58,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: async (email, password) => {
       if (!auth) throw new Error('Firebase is not configured.')
       await signInWithEmailAndPassword(auth, email.trim(), password)
+    },
+    resetPassword: async (email) => {
+      if (!auth) throw new Error('Firebase is not configured.')
+      await sendPasswordResetEmail(auth, email.trim())
     },
     register: async (details, password) => {
       if (!auth || !profilesDb) throw new Error('Firebase is not configured.')

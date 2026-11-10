@@ -18,6 +18,7 @@ export type AuthContextValue = {
   error: string
   isAdmin: boolean
   login: (email: string, password: string) => Promise<void>
+  resetPassword: (email: string) => Promise<void>
   register: (details: Omit<UserProfile, 'uid' | 'status'>, password: string) => Promise<void>
   logout: () => Promise<void>
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
