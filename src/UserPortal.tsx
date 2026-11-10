@@ -114,7 +114,7 @@ function AccessForm() {
   }
 
   return <main className="auth-screen">
-    <div className="auth-visual"><div className="visual-grid" /><Brand /><div className="visual-copy"><span className="eyebrow">MT5 · MARKET SIGNALS</span><h1>Read the market.<br /><em>Trade your plan.</em></h1><p>Live setup levels, chart context, and session performance in one quiet workspace.</p></div><div className="visual-foot"><span>MYVIEW SIGNAL DESK</span><span>READ-ONLY MARKET DATA</span></div></div>
+    <div className="auth-visual"><div className="visual-grid" /><Brand /><div className="visual-copy"><span className="eyebrow">MT5 · MARKET SIGNALS</span><h1>Read the market.<br /><em>Trade your plan.</em></h1><p>Live setup levels, chart context, and session performance in one quiet workspace.</p></div><div className="visual-foot"><span>NEXTGEN GOLD SIGNAL DESK</span><span>READ-ONLY MARKET DATA</span></div></div>
     <section className="auth-side"><div className="mobile-brand"><Brand /></div><div className="auth-form-wrap"><span className="eyebrow">{mode === 'login' ? 'MEMBER ACCESS' : 'NEW ACCOUNT'}</span><h2>{mode === 'login' ? 'Welcome back' : 'Request access'}</h2><p className="auth-subtitle">{mode === 'login' ? 'Sign in to your approved account.' : 'Create your profile. An administrator must approve access.'}</p>
       <form className="auth-form" onSubmit={(event) => void submit(event)}>
         {mode === 'register' && <>
@@ -131,7 +131,7 @@ function AccessForm() {
       </form>
       <div className="auth-switch">{mode === 'login' ? 'Need an account?' : 'Already registered?'} <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setFormError(''); setFormNotice(''); setResetMessage(''); clearError() }}>{mode === 'login' ? 'Request access' : 'Sign in'}</button></div>
       <p className="privacy-note"><LockKeyhole size={13} /> Passwords are handled by Firebase Authentication.</p>
-    </div><span className="auth-copyright">MYVIEW MARKET LAB <b>·</b> SIGNALS ARE FOR INFORMATION ONLY</span></section>
+    </div><span className="auth-copyright">NEXTGEN GOLD <b>·</b> SIGNALS ARE FOR INFORMATION ONLY</span></section>
   </main>
 }
 
@@ -290,7 +290,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   }
 
   return <div className="desk-shell">
-    <header className="desk-topbar"><a className="brand" href={appPath()}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span>{isAdmin && <a className="icon-control" href={appPath('admin.html')} aria-label="Admin management" title="Admin management"><ShieldCheck size={16} /></a>}<button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
+    <header className="desk-topbar"><a className="brand" href={appPath()} aria-label="NextGen Gold Signal Desk"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span>{isAdmin && <a className="icon-control" href={appPath('admin.html')} aria-label="Admin management" title="Admin management"><ShieldCheck size={16} /></a>}<button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
     <main className="desk-content">
       <div className="desk-title-row"><div><span className="eyebrow">MARKET OVERVIEW <b>/</b> {symbol}</span><h1>Signal desk</h1><p>Read-only market context and confirmed strategy levels.</p></div><form className="symbol-picker" onSubmit={chooseSymbol}><label htmlFor="symbol-input">SYMBOL</label><input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} aria-label="Market symbol" /><button type="submit" title="Load symbol" aria-label="Load symbol"><RefreshCw size={15} /></button></form></div>
       <section className="market-layout">
@@ -300,9 +300,9 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
         </aside>
       </section>
       <section className="session-section"><div className="section-heading"><div><span className="eyebrow">LAST 30 DAYS · 1R TARGET</span><h2>Session win rates</h2></div><span className="section-caption">Backtest performance · not a forecast</span></div><div className="session-grid">{['Asian', 'London', 'New York', 'IB'].map((session) => <SessionCard key={session} session={session} item={sessions.find((result) => result.target_r === 1 && result.session === session)} />)}</div></section>
-      <div className="desk-disclaimer"><CircleAlert size={14} /><span>Signals are informational, not financial advice. MyView does not place or manage orders. Historical results do not guarantee future outcomes.</span></div>
+      <div className="desk-disclaimer"><CircleAlert size={14} /><span>Signals are informational, not financial advice. NextGen Gold does not place or manage orders. Historical results do not guarantee future outcomes.</span></div>
     </main>
-    <footer className="desk-footer"><span>MYVIEW SIGNAL DESK</span><span>ASIA/COLOMBO <b>·</b> {profile.fullName}</span></footer>
+    <footer className="desk-footer"><span>NEXTGEN GOLD SIGNAL DESK</span><span>ASIA/COLOMBO <b>·</b> {profile.fullName}</span></footer>
     {profileOpen && <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} />}
   </div>
 }
@@ -350,7 +350,7 @@ function ProfileDialog({ profile, onClose }: { profile: UserProfile; onClose: ()
 }
 
 function Brand() {
-  return <a className="brand" href={appPath()}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span></a>
+  return <a className="brand" href={appPath()} aria-label="NextGen Gold"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span></a>
 }
 
 function maskNic(nic: string) {

@@ -1,19 +1,19 @@
 {
   "id": "./",
-  "name": "MyView Signals",
-  "short_name": "MyView",
-  "description": "Approved-member MT5 signals and market charts.",
+  "name": "NextGen Gold Signals",
+  "short_name": "NextGen Gold",
+  "description": "Approved-member NextGen Gold MT5 signals and market charts.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f3f5f2",
-  "theme_color": "#f3f5f2",
+  "background_color": "#080f1e",
+  "theme_color": "#080f1e",
   "icons": [
     {
-      "src": "./app-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "./nextgen-gold-app.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

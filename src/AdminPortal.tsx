@@ -231,7 +231,7 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
     }
   }, [canRunRelay, relayEnabled, relaySymbol, user])
 
-  return <div className="admin-shell"><header className="admin-topbar"><a className="brand" href={appPath('admin.html')}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span><i /><small>ADMIN</small></a><div className="admin-user"><span>{adminEmail}</span><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={16} /></button></div></header>
+  return <div className="admin-shell"><header className="admin-topbar"><a className="brand" href={appPath('admin.html')} aria-label="NextGen Gold Admin"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span><i /><small>ADMIN</small></a><div className="admin-user"><span>{adminEmail}</span><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={16} /></button></div></header>
     <main className="admin-content"><div className="admin-heading"><div><span className="eyebrow">OPERATIONS / ACCESS CONTROL</span><h1>Admin desk</h1><p>Review member requests and keep the market signal feed connected.</p></div><a className="secondary-button" href={appPath()}>Open user site</a></div>
       <div className="admin-metrics"><div className="admin-metric"><span>REGISTERED MEMBERS</span><strong>{users.length}</strong></div><div className="admin-metric"><span>WAITING FOR REVIEW</span><strong>{pendingCount}</strong></div><div className="admin-metric"><span>ACTIVE ACCESS</span><strong>{approvedCount}</strong></div></div>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MEMBERS</span><h2>User access</h2></div><input className="admin-filter" aria-label="Search users" placeholder="Search name, email or phone" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{error && <div className="admin-error" role="alert">{error}</div>}{notice && <div className="admin-success" role="status">{notice}</div>}<div className="user-list"><div className="user-row header"><span>MEMBER</span><span>CONTACT</span><span>NIC</span><span>STATUS</span><span>ACTIONS</span></div>{filteredUsers.length ? filteredUsers.map((item) => <UserRow key={item.uid} item={item} busy={workingUid === item.uid} onApprove={() => void setAccess(item, 'approved')} onRevoke={() => void setAccess(item, 'disabled')} />) : <div className="list-empty">{users.length ? 'No matching members.' : 'No user registrations yet.'}</div>}</div></section>
@@ -246,7 +246,7 @@ function UserRow({ item, busy, onApprove, onRevoke }: { item: ManagedUser; busy:
 }
 
 function Brand() {
-  return <a className="brand" href={appPath('admin.html')}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span></a>
+  return <a className="brand" href={appPath('admin.html')} aria-label="NextGen Gold"><img className="brand-logo" src={appPath('nextgen-gold-logo.png')} alt="" /><span className="brand-name">NextGen Gold</span></a>
 }
 
 function maskNic(nic: string) {
