@@ -8,7 +8,7 @@ The production build contains two separate website entries: the approved-member 
 
 1. Use Firebase project `website-sign-in-dbc96` for Email/Password Authentication, profiles, signals, and chart candles. Signals are stored at `/signals/{SYMBOL}` and chart candles at `/market/{SYMBOL}` in the profiles Realtime Database, so its rules can restrict reads to approved users and the configured admin.
 2. Copy `.env.example` to `.env`, add the web API key and App ID from `website-sign-in-dbc96`, and set the actual profiles database URL. Create the administrator account in that project's Authentication and put its UID in `VITE_FIREBASE_ADMIN_UIDS`.
-3. Paste `firebase.rules.profiles.json` into the `website-sign-in-dbc96` Realtime Database rules. It allows approved users and the configured admin to read signals and chart data, while browser writes remain denied. The Python API writes with Firebase Admin SDK credentials.
+3. Paste `firebase.rules.profiles.json` into the `website-sign-in-dbc96` Realtime Database rules. Approved users and the configured admin can read signals and chart data; only the configured admin can update relay commands/status. Signal and market-data browser writes remain denied. The Python API writes those feeds with Firebase Admin SDK credentials.
 4. Set the Python API variables shown in `api/.env.backend.example`. Use a service account with access to `website-sign-in-dbc96` for both profile verification and signal writes; keep its JSON key outside the repository. For local PowerShell development, set these values before starting Uvicorn:
 
   ```powershell
@@ -22,7 +22,7 @@ The production build contains two separate website entries: the approved-member 
   ..\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
   ```
   For the desktop launcher, copy `api/.env.backend.example` to the ignored `api/.env.backend` file, update `GOOGLE_APPLICATION_CREDENTIALS` to the downloaded key path, and run `start-myview.bat`. The launcher loads this local file before starting the API.
-5. Start the MT5 API and open `http://127.0.0.1:8000/admin.html` on the MT5 laptop. Sign in as the configured admin, approve member requests, and start the signal relay. Keep this local admin page open; it sends engine signals from the local API to Firebase. The hosted member site reads them directly from Firebase and does not need to connect to the laptop.
+5. Start the MT5 API and open `http://127.0.0.1:8000/admin.html` on the MT5 laptop. Sign in as the configured admin and keep this local admin page open while the relay is active. The hosted admin can request relay start/stop through the admin-only `/relayControl/active` Firebase path; the local admin page receives the command and sends engine signals from the local API to Firebase. The hosted member site reads signals and candles directly from Firebase.
 
 The API verifies sign-in tokens and approval status in `website-sign-in-dbc96`, then writes signals and recent MT5 chart candles into the same project's Realtime Database. The laptop API does not need to be exposed to the internet for the website's signal feed or chart. The website still needs a public API URL for backtest statistics; without it that API-powered feature is unavailable. Firebase web API keys are public identifiers; database rules and backend token verification provide access control.
 
@@ -34,7 +34,7 @@ The repository includes `.github/workflows/deploy-pages.yml`. Push to `main` or 
 
 Before enabling Pages, add these Actions secrets from `website-sign-in-dbc96`: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, and `VITE_FIREBASE_PROFILES_DATABASE_URL`. Add Actions variable `VITE_FIREBASE_ADMIN_UIDS` and, if the website should also load live candles and backtest statistics, `VITE_API_BASE_URL` (an HTTPS origin for the Python/MT5 API, without a trailing slash). Add the final `owner.github.io` hostname to Authentication's authorized domains. In GitHub repository settings, enable Pages with **GitHub Actions** as the source.
 
-GitHub Pages cannot host the Python/MT5 API. Keep the API and MetaTrader 5 running on the laptop, and start the relay from its local admin page. The relay publishes chart candles to Firebase every 30 seconds for the hosted website. Without `VITE_API_BASE_URL`, session statistics cannot reach the API, but the signal feed and chart are read directly from Firebase.
+GitHub Pages cannot host the Python/MT5 API. Keep the API, MetaTrader 5, and local Admin page running on the laptop. The deployed Admin can send an authenticated relay request through Firebase without exposing the API to the internet; the laptop page performs the actual polling and publishes chart candles every 30 seconds. Without `VITE_API_BASE_URL`, session statistics cannot reach the API, but the signal feed and chart are read directly from Firebase.
 
 ## Windows desktop installer
 

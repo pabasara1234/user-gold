@@ -28,6 +28,29 @@
         ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
         ".write": false
       }
+    },
+    "relayControl": {
+      "active": {
+        ".read": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'",
+        ".write": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'",
+        ".validate": "newData.hasChildren(['enabled', 'symbol', 'requestedAt'])",
+        "enabled": { ".validate": "newData.isBoolean()" },
+        "symbol": { ".validate": "newData.isString() && newData.val().matches(/^[A-Z0-9._-]{2,20}$/)" },
+        "requestedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "relayStatus": {
+      "active": {
+        ".read": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'",
+        ".write": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'",
+        ".validate": "newData.hasChildren(['running', 'updatedAt', 'signalCount'])",
+        "running": { ".validate": "newData.isBoolean()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "signalCount": { ".validate": "newData.isNumber()" },
+        "lastError": { ".validate": "newData.isString()" },
+        "$other": { ".validate": false }
+      }
     }
   }
 }

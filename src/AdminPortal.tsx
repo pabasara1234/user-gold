@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { onValue, ref, update, serverTimestamp } from 'firebase/database'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { onValue, ref, set, update, serverTimestamp } from 'firebase/database'
 import { CircleAlert, LogOut, Radio, RefreshCw, ShieldCheck, UserCheck, UserX } from 'lucide-react'
 import { AuthProvider } from './auth'
 import { useAuth, type UserProfile } from './auth-context'
@@ -8,6 +8,7 @@ import { apiUrl, appPath } from './deployment'
 
 type ManagedUser = UserProfile & { reviewedAt?: number }
 type EngineSignal = { direction: 'buy' | 'sell'; entry_time: number; entry: number; stop: number; [key: string]: unknown }
+type RelayStatus = { running: boolean; updatedAt: number; signalCount: number; lastError?: string }
 
 function AdminRoot() {
   const { user, loading, isAdmin, login, logout } = useAuth()
@@ -52,14 +53,23 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   const [relaySymbol, setRelaySymbol] = useState('GOLD')
   const [relayUpdated, setRelayUpdated] = useState('Not started')
   const [relayError, setRelayError] = useState('')
+  const [relayNotice, setRelayNotice] = useState('')
   const [signalCount, setSignalCount] = useState(0)
-  const relayApiAvailable = Boolean(import.meta.env.VITE_API_BASE_URL?.trim())
-    || window.location.hostname === 'localhost'
-    || window.location.hostname === '127.0.0.1'
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(null)
+  const [relayBusy, setRelayBusy] = useState(false)
+  const [now, setNow] = useState(0)
+  const relaySignalCount = useRef(0)
+  const canRunRelay = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   const filteredUsers = useMemo(() => users.filter((item) => `${item.fullName} ${item.email} ${item.phone}`.toLowerCase().includes(search.toLowerCase())), [users, search])
   const pendingCount = users.filter((item) => item.status === 'pending').length
   const approvedCount = users.filter((item) => item.status === 'approved').length
   const validRelaySymbol = /^[A-Z0-9._-]{2,20}$/.test(relaySymbol)
+  const relayIsActive = Boolean(relayStatus?.running && now >= relayStatus.updatedAt && now - relayStatus.updatedAt < 15_000)
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 5_000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (!adminProfilesDb) return
@@ -86,10 +96,76 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   }
 
   useEffect(() => {
-    if (!relayEnabled || !user) return
+    if (!adminProfilesDb || !user) return
+    const controlRef = ref(adminProfilesDb, 'relayControl/active')
+    const statusRef = ref(adminProfilesDb, 'relayStatus/active')
+    const unsubscribeControl = onValue(controlRef, (snapshot) => {
+      const command = snapshot.val() as { enabled?: unknown; symbol?: unknown } | null
+      setRelayEnabled(command?.enabled === true)
+      if (typeof command?.symbol === 'string' && /^[A-Z0-9._-]{2,20}$/.test(command.symbol)) {
+        setRelaySymbol(command.symbol)
+      }
+    }, () => setRelayError('Could not read relay control. Check Firebase rules and connection.'))
+    const unsubscribeStatus = onValue(statusRef, (snapshot) => {
+      const status = snapshot.val() as RelayStatus | null
+      if (status && typeof status.updatedAt === 'number') {
+        setRelayStatus(status)
+        const publishedCount = typeof status.signalCount === 'number' ? status.signalCount : 0
+        relaySignalCount.current = publishedCount
+        setSignalCount(publishedCount)
+        setRelayUpdated(new Date(status.updatedAt).toLocaleTimeString())
+        if (status.lastError) setRelayError(status.lastError)
+        else setRelayError('')
+      } else {
+        setRelayStatus(null)
+        setSignalCount(0)
+        setRelayUpdated('Not started')
+      }
+    }, () => setRelayError('Could not read relay status. Check Firebase rules and connection.'))
+    return () => {
+      unsubscribeControl()
+      unsubscribeStatus()
+    }
+  }, [user])
+
+  async function requestRelayState(enabled: boolean) {
+    if (!adminProfilesDb) {
+      setRelayError('Firebase is not configured.')
+      return
+    }
+    setRelayBusy(true)
+    setRelayError('')
+    setRelayNotice('')
+    try {
+      await set(ref(adminProfilesDb, 'relayControl/active'), {
+        enabled,
+        symbol: relaySymbol,
+        requestedAt: Date.now(),
+      })
+      setRelayNotice(enabled
+        ? 'Start requested. Keep the MT5 laptop and its local Admin page running.'
+        : 'Stop requested.')
+    } catch (reason) {
+      setRelayError(reason instanceof Error ? reason.message : 'Could not update relay control.')
+    } finally {
+      setRelayBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!canRunRelay || !relayEnabled || !user || !adminProfilesDb) return
     let active = true
     let busy = false
     let lastMarketPublishedAt = 0
+    let currentSignalCount = relaySignalCount.current
+    const publishStatus = async (lastError = '') => {
+      await set(ref(adminProfilesDb, 'relayStatus/active'), {
+        running: true,
+        updatedAt: Date.now(),
+        signalCount: currentSignalCount,
+        lastError,
+      })
+    }
     const relay = async () => {
       if (busy) return
       busy = true
@@ -108,6 +184,8 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
         if (!publishResponse.ok) throw new Error(`Signal publish API returned ${publishResponse.status}.`)
         const published = await publishResponse.json() as { count: number }
         if (active) {
+          currentSignalCount = published.count
+          relaySignalCount.current = published.count
           setSignalCount(published.count)
           setRelayUpdated(new Date().toLocaleTimeString())
           setRelayError('')
@@ -123,22 +201,41 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
           if (!marketResponse.ok) throw new Error(`Chart publish API returned ${marketResponse.status}.`)
           lastMarketPublishedAt = Date.now()
         }
+        if (active) await publishStatus()
       } catch (reason) {
-        if (active) setRelayError(reason instanceof Error ? reason.message : 'Could not relay engine signals.')
+        if (active) {
+          const message = reason instanceof Error ? reason.message : 'Could not relay engine signals.'
+          setRelayError(message)
+          try {
+            await publishStatus(message)
+            setRelayUpdated(new Date().toLocaleTimeString())
+          } catch (statusReason) {
+            setRelayError(statusReason instanceof Error ? statusReason.message : 'Could not publish relay status.')
+          }
+        }
       } finally {
         busy = false
       }
     }
     void relay()
     const interval = window.setInterval(() => void relay(), 5_000)
-    return () => { active = false; window.clearInterval(interval) }
-  }, [relayApiAvailable, relayEnabled, relaySymbol, user])
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      void set(ref(adminProfilesDb, 'relayStatus/active'), {
+        running: false,
+        updatedAt: Date.now(),
+        signalCount: currentSignalCount,
+        lastError: '',
+      }).catch((reason: unknown) => setRelayError(reason instanceof Error ? reason.message : 'Could not publish relay status.'))
+    }
+  }, [canRunRelay, relayEnabled, relaySymbol, user])
 
   return <div className="admin-shell"><header className="admin-topbar"><a className="brand" href={appPath('admin.html')}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span><i /><small>ADMIN</small></a><div className="admin-user"><span>{adminEmail}</span><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={16} /></button></div></header>
     <main className="admin-content"><div className="admin-heading"><div><span className="eyebrow">OPERATIONS / ACCESS CONTROL</span><h1>Admin desk</h1><p>Review member requests and keep the market signal feed connected.</p></div><a className="secondary-button" href={appPath()}>Open user site</a></div>
       <div className="admin-metrics"><div className="admin-metric"><span>REGISTERED MEMBERS</span><strong>{users.length}</strong></div><div className="admin-metric"><span>WAITING FOR REVIEW</span><strong>{pendingCount}</strong></div><div className="admin-metric"><span>ACTIVE ACCESS</span><strong>{approvedCount}</strong></div></div>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MEMBERS</span><h2>User access</h2></div><input className="admin-filter" aria-label="Search users" placeholder="Search name, email or phone" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{error && <div className="admin-error" role="alert">{error}</div>}{notice && <div className="admin-success" role="status">{notice}</div>}<div className="user-list"><div className="user-row header"><span>MEMBER</span><span>CONTACT</span><span>NIC</span><span>STATUS</span><span>ACTIONS</span></div>{filteredUsers.length ? filteredUsers.map((item) => <UserRow key={item.uid} item={item} busy={workingUid === item.uid} onApprove={() => void setAccess(item, 'approved')} onRevoke={() => void setAccess(item, 'disabled')} />) : <div className="list-empty">{users.length ? 'No matching members.' : 'No user registrations yet.'}</div>}</div></section>
-        <aside className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MT5 Â· PYTHON ENGINE</span><h2>Signal relay</h2></div><Radio size={16} color="#63736a" /></div><div className="relay-body"><div className={`relay-status ${relayEnabled ? 'running' : ''}`}><i />{relayEnabled ? 'Relay is polling every 5 seconds' : 'Relay is stopped'}</div><label className="field-label" htmlFor="relay-symbol" style={{ display: 'block', marginTop: 16, color: '#78827c', fontSize: 9 }}>MT5 SYMBOL</label><div className="symbol-picker" style={{ marginTop: 6, width: '100%' }}><input id="relay-symbol" value={relaySymbol} disabled={relayEnabled} onChange={(event) => setRelaySymbol(event.target.value.toUpperCase())} aria-label="Relay symbol" /><button type="button" title="Reset symbol" aria-label="Reset symbol" disabled={relayEnabled} onClick={() => setRelaySymbol('GOLD')}><RefreshCw size={13} /></button></div><button className={`relay-button ${relayEnabled ? 'stop' : ''}`} type="button" disabled={(!relayEnabled && !validRelaySymbol) || !adminUids.size || (!relayEnabled && !relayApiAvailable)} onClick={() => setRelayEnabled((enabled) => !enabled)}>{relayEnabled ? 'Stop relay' : 'Start signal relay'}</button>{!relayApiAvailable && <small className="password-message">Start the relay from the local admin page on the MT5 laptop, not this hosted page.</small>}{!validRelaySymbol && <small className="password-message">Use 2â€“20 letters, numbers, dots, underscores or hyphens.</small>}{relayError && <div className="admin-error" role="alert">{relayError}</div>}<div className="relay-meta"><span>LAST CHECK <strong>{relayUpdated}</strong></span><span>PUBLISHED SIGNALS <strong>{signalCount}</strong></span></div><p className="relay-note">Keep the local admin page open on the MT5 laptop while the relay is active. It sends signals every 5 seconds and chart candles to Firebase every 30 seconds. Approved members read both directly from Firebase.</p></div></aside></div>
+        <aside className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MT5 Â· PYTHON ENGINE</span><h2>Signal relay</h2></div><Radio size={16} color="#63736a" /></div><div className="relay-body"><div className={`relay-status ${relayIsActive ? 'running' : ''}`}><i />{relayIsActive ? 'Relay is polling every 5 seconds' : relayEnabled ? 'Start requested · waiting for laptop relay' : 'Relay is stopped'}</div><label className="field-label" htmlFor="relay-symbol" style={{ display: 'block', marginTop: 16, color: '#78827c', fontSize: 9 }}>MT5 SYMBOL</label><div className="symbol-picker" style={{ marginTop: 6, width: '100%' }}><input id="relay-symbol" value={relaySymbol} disabled={relayEnabled || relayBusy} onChange={(event) => setRelaySymbol(event.target.value.toUpperCase())} aria-label="Relay symbol" /><button type="button" title="Reset symbol" aria-label="Reset symbol" disabled={relayEnabled || relayBusy} onClick={() => setRelaySymbol('GOLD')}><RefreshCw size={13} /></button></div><button className={`relay-button ${relayEnabled ? 'stop' : ''}`} type="button" disabled={!validRelaySymbol || !adminUids.size || relayBusy} onClick={() => void requestRelayState(!relayEnabled)}>{relayBusy ? 'Updating relay…' : relayEnabled ? 'Stop relay' : 'Start signal relay'}</button>{!canRunRelay && <small className="password-message">Keep the MT5 laptop and its local Admin page open so it can receive this request.</small>}{!validRelaySymbol && <small className="password-message">Use 2–20 letters, numbers, dots, underscores or hyphens.</small>}{relayError && <div className="admin-error" role="alert">{relayError}</div>}{relayNotice && <div className="admin-success" role="status">{relayNotice}</div>}<div className="relay-meta"><span>LAST CHECK <strong>{relayUpdated}</strong></span><span>PUBLISHED SIGNALS <strong>{signalCount}</strong></span></div><p className="relay-note">The laptop relay reads start/stop requests from Firebase, then sends engine signals every 5 seconds and chart candles every 30 seconds. The MT5 API stays local and is never exposed to the internet.</p></div></aside></div>
       <div className="desk-disclaimer"><ShieldCheck size={14} /><span>Admin identity is checked against the configured UID; database rules must use the same UID. Never expose a Firebase service-account key in this website.</span></div>
     </main>
   </div>
