@@ -5,6 +5,10 @@ import {
   createChart,
   createSeriesMarkers,
   type UTCTimestamp,
+  type IChartApi,
+  type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type Time,
 } from 'lightweight-charts'
 import { onValue, ref } from 'firebase/database'
 import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, LogOut, LockKeyhole, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react'
@@ -152,14 +156,19 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const chartNode = useRef<HTMLDivElement>(null)
-  const latestSignals = useMemo(() => [...signals].sort((a, b) => b.entry_time - a.entry_time).slice(0, 4), [signals])
+  const chartRef = useRef<IChartApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const renderedCandlesRef = useRef<Candle[]>([])
+  const chartInitializedRef = useRef(false)
+  const latestSignals = useMemo(() => [...signals].sort((a, b) => b.entry_time - a.entry_time).slice(0, 3), [signals])
 
   useEffect(() => {
     if (profilesDb) {
       return onValue(ref(profilesDb, `signals/${signalSymbolKey(symbol)}`), (snapshot) => {
         const value = snapshot.val()
         const nextSignals = value && typeof value === 'object' ? Object.values(value) : []
-        setSignals(nextSignals.filter(isSignal).sort((a, b) => a.entry_time - b.entry_time))
+        setSignals(nextSignals.filter(isSignal).sort((a, b) => a.entry_time - b.entry_time).slice(-3))
         setSignalFeedError('')
       }, (reason) => {
         setSignals([])
@@ -181,7 +190,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
         })
         if (!response.ok) throw new Error('Could not load approved signal feed.')
         const data = await response.json() as { signals: Signal[] }
-        if (active) setSignals((data.signals ?? []).filter(isSignal).sort((a, b) => a.entry_time - b.entry_time))
+        if (active) setSignals((data.signals ?? []).filter(isSignal).sort((a, b) => a.entry_time - b.entry_time).slice(-3))
       } catch {
         if (active && !controller.signal.aborted) setSignals([])
       } finally {
@@ -199,12 +208,16 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       return onValue(ref(profilesDb, `market/${signalSymbolKey(symbol)}`), (snapshot) => {
         const value = snapshot.val() as { candles?: Record<string, Candle> | Candle[]; updatedAt?: number } | null
         const storedCandles = value?.candles
-        const nextCandles = Array.isArray(storedCandles)
+        const cutoff = Math.floor(Date.now() / 1000) - 24 * 60 * 60
+        const nextCandles = (Array.isArray(storedCandles)
           ? storedCandles
           : storedCandles && typeof storedCandles === 'object'
             ? Object.values(storedCandles)
-            : []
-        setCandles(nextCandles.filter(isCandle).sort((a, b) => a.time - b.time))
+            : [])
+          .filter(isCandle)
+          .filter((candle) => candle.time >= cutoff)
+          .sort((a, b) => a.time - b.time)
+        setCandles(nextCandles)
         setChartState(nextCandles.length ? '' : 'Waiting for chart data from the MT5 laptop')
         setUpdatedAt(value?.updatedAt ? new Date(value.updatedAt * 1000) : null)
       }, (reason) => {
@@ -220,7 +233,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       try {
         const token = await user!.getIdToken()
         const end = Math.floor(Date.now() / 1000)
-        const start = end - 7 * 24 * 60 * 60
+        const start = end - 24 * 60 * 60
         const response = await fetch(apiUrl(`/api/history?symbol=${encodeURIComponent(symbol)}&timeframe=5m&start=${start}&end=${end}`), { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } })
         if (!response.ok) throw new Error('MT5 history is not available. Check the terminal connection.')
         const result = await response.json() as { bars: Candle[] }
@@ -257,7 +270,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   }, [symbol, user])
 
   useEffect(() => {
-    if (!chartNode.current || !candles.length) return
+    if (!chartNode.current) return
     const chart = createChart(chartNode.current, {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: '#080f1e' }, textColor: '#9aacc5', fontFamily: 'DM Mono, monospace', fontSize: 10 },
@@ -270,7 +283,44 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       upColor: '#70c8ff', downColor: '#ff6678', borderVisible: false,
       wickUpColor: '#70c8ff', wickDownColor: '#ff6678',
     })
-    series.setData(candles.map((candle) => ({ ...candle, time: candle.time as UTCTimestamp })))
+    chartRef.current = chart
+    candleSeriesRef.current = series
+    return () => {
+      markersRef.current?.detach()
+      markersRef.current = null
+      chartRef.current = null
+      candleSeriesRef.current = null
+      renderedCandlesRef.current = []
+      chartInitializedRef.current = false
+      chart.remove()
+    }
+  }, [])
+
+  useEffect(() => {
+    const series = candleSeriesRef.current
+    if (!series || !candles.length) return
+    const previous = renderedCandlesRef.current
+    const previousLast = previous.at(-1)
+    const previousLastIndex = previousLast
+      ? candles.findIndex((candle) => candle.time === previousLast.time)
+      : -1
+    if (!previousLast || previousLastIndex < 0 || candles[0].time !== previous[0].time) {
+      series.setData(candles.map((candle) => ({ ...candle, time: candle.time as UTCTimestamp })))
+      if (!chartInitializedRef.current) {
+        chartRef.current?.timeScale().fitContent()
+        chartInitializedRef.current = true
+      }
+    } else {
+      for (const candle of candles.slice(previousLastIndex)) {
+        series.update({ ...candle, time: candle.time as UTCTimestamp })
+      }
+    }
+    renderedCandlesRef.current = candles
+  }, [candles])
+
+  useEffect(() => {
+    const series = candleSeriesRef.current
+    if (!series) return
     const markers = signals.filter((signal) => candles.some((bar) => bar.time === signal.entry_time)).map((signal) => ({
       time: signal.entry_time as UTCTimestamp,
       position: signal.direction === 'buy' ? 'belowBar' as const : 'aboveBar' as const,
@@ -278,9 +328,8 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       shape: signal.direction === 'buy' ? 'arrowUp' as const : 'arrowDown' as const,
       text: signal.direction.toUpperCase(),
     }))
-    createSeriesMarkers(series, markers)
-    chart.timeScale().fitContent()
-    return () => chart.remove()
+    if (markersRef.current) markersRef.current.setMarkers(markers)
+    else markersRef.current = createSeriesMarkers(series, markers)
   }, [candles, signals])
 
   function chooseSymbol(event: FormEvent<HTMLFormElement>) {

@@ -190,7 +190,7 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
           setRelayUpdated(new Date().toLocaleTimeString())
           setRelayError('')
         }
-        if (Date.now() - lastMarketPublishedAt >= 30_000) {
+        if (Date.now() - lastMarketPublishedAt >= 5_000) {
           const marketHeaders = new Headers({ 'Content-Type': 'application/json' })
           marketHeaders.set('Authorization', ['Bearer', token].join(' '))
           const marketResponse = await fetch(apiUrl('/api/market/publish'), {
