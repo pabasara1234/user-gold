@@ -16,6 +16,12 @@
         "reviewedBy": { ".validate": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' && newData.isString()" },
         "$other": { ".validate": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'" }
       }
+    },
+    "signals": {
+      "$symbol": {
+        ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
+        ".write": false
+      }
     }
   }
 }

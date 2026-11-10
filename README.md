@@ -4,12 +4,12 @@ A local, read-only MT5 multi-timeframe liquidity strategy and backtest workspace
 
 ## Signal and admin websites
 
-The production build contains two separate website entries: the approved-member signal desk at `/` and the administrator website at `/admin.html`. The existing desktop Market Lab remains available at `/marketlab.html` and is still the Electron app's entry point. Authentication, user profiles, and approval records belong to `website-sign-in-dbc96`; published signals belong to the separate `nextgen-gold` Realtime Database. Passwords are stored only by Firebase Authentication, never in either database.
+The production build contains two separate website entries: the approved-member signal desk at `/` and the administrator website at `/admin.html`. The existing desktop Market Lab remains available at `/marketlab.html` and is still the Electron app's entry point. Authentication, user profiles, approval records, and published signals belong to the `website-sign-in-dbc96` Realtime Database. Passwords are stored only by Firebase Authentication.
 
-1. Use Firebase project `website-sign-in-dbc96` for Email/Password Authentication and the profiles Realtime Database. Use project `nextgen-gold` for the signals Realtime Database.
+1. Use Firebase project `website-sign-in-dbc96` for Email/Password Authentication, profiles, and signals. Signals are stored at `/signals/{SYMBOL}` in the profiles Realtime Database, so its rules can restrict reads to approved users and the configured admin.
 2. Copy `.env.example` to `.env`, add the web API key and App ID from `website-sign-in-dbc96`, and set the actual profiles database URL. Create the administrator account in that project's Authentication and put its UID in `VITE_FIREBASE_ADMIN_UIDS`.
-3. Paste `firebase.rules.profiles.json` into the `website-sign-in-dbc96` rules and `firebase.rules.signals.json` into the `nextgen-gold` rules. The signals database denies browser access; the Python API accesses it with its service account.
-4. Set the Python API variables shown in `api/.env.backend.example`. Use one service account with access to `website-sign-in-dbc96` for token verification/profile reads, and a `nextgen-gold` service account for signal database access. Keep both JSON keys outside the repository. For local PowerShell development, set these values before starting Uvicorn:
+3. Paste `firebase.rules.profiles.json` into the `website-sign-in-dbc96` Realtime Database rules. It allows approved users and the configured admin to read signals, while browser writes remain denied. The Python API writes with Firebase Admin SDK credentials.
+4. Set the Python API variables shown in `api/.env.backend.example`. Use a service account with access to `website-sign-in-dbc96` for both profile verification and signal writes; keep its JSON key outside the repository. For local PowerShell development, set these values before starting Uvicorn:
 
   ```powershell
   $env:FIREBASE_PROJECT_ID = 'website-sign-in-dbc96'
@@ -17,15 +17,13 @@ The production build contains two separate website entries: the approved-member 
   $env:FIREBASE_ADMIN_UIDS = 'LmimXySoBHbywGG91I4ozMECPy12'
   $env:MYVIEW_REQUIRE_AUTH = 'true'
   $env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\website-sign-in-service-account.json'
-  $env:SIGNALS_FIREBASE_PROJECT_ID = 'nextgen-gold'
-  $env:SIGNALS_FIREBASE_DATABASE_URL = 'https://nextgen-gold-default-rtdb.firebaseio.com'
-  $env:SIGNALS_GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\nextgen-gold-service-account.json'
   Set-Location api
   ..\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
   ```
-5. Start the MT5 API and Vite (`npm run dev`). Open `http://localhost:5173/` for the member site and `http://localhost:5173/admin.html` for access management. Sign in as the configured admin, approve member requests, and keep the admin signal relay running to publish engine signals to the signals database.
+  For the desktop launcher, copy `api/.env.backend.example` to the ignored `api/.env.backend` file, update `GOOGLE_APPLICATION_CREDENTIALS` to the downloaded key path, and run `start-myview.bat`. The launcher loads this local file before starting the API.
+5. Start the MT5 API and open `http://127.0.0.1:8000/admin.html` on the MT5 laptop. Sign in as the configured admin, approve member requests, and start the signal relay. Keep this local admin page open; it sends engine signals from the local API to Firebase. The hosted member site reads them directly from Firebase and does not need to connect to the laptop.
 
-The API verifies sign-in tokens and approval status in `website-sign-in-dbc96`, then uses a separate service account to read/write signals in `nextgen-gold`. For deployment, set `MYVIEW_REQUIRE_AUTH=true` and `MYVIEW_CORS_ORIGINS`; route `/api/*` to this Python service. A deployed MT5 service must run where the connected terminal is available. Firebase web API keys are public identifiers; database rules and backend token verification provide access control.
+The API verifies sign-in tokens and approval status in `website-sign-in-dbc96`, then writes signals into the same project's Realtime Database. The laptop API does not need to be exposed to the internet for signal delivery. The website still needs a public API URL for live candles and backtest statistics; without it those API-powered features are unavailable, but the Firebase signal feed works. Firebase web API keys are public identifiers; database rules and backend token verification provide access control.
 
 The client-side admin UID list only controls portal navigation. Realtime Database rules and backend verification must be configured with the same UID; do not rely on the client check as the security boundary.
 
@@ -33,9 +31,9 @@ The client-side admin UID list only controls portal navigation. Realtime Databas
 
 The repository includes `.github/workflows/deploy-pages.yml`. Push to `main` or run the workflow manually to build and deploy the member site (`/`) and admin site (`/admin.html`). The workflow excludes `marketlab.html` and detects the repository name to configure the correct GitHub Pages subpath automatically.
 
-Before enabling Pages, add these Actions secrets from `website-sign-in-dbc96`: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, and `VITE_FIREBASE_PROFILES_DATABASE_URL`. Add Actions variables `VITE_FIREBASE_ADMIN_UIDS` and `VITE_API_BASE_URL` (the HTTPS origin for the Python/MT5 API, without a trailing slash). Configure the `nextgen-gold` service account on that API host. Add the final `owner.github.io` hostname to Authentication's authorized domains and API `MYVIEW_CORS_ORIGINS`. In GitHub repository settings, enable Pages with **GitHub Actions** as the source.
+Before enabling Pages, add these Actions secrets from `website-sign-in-dbc96`: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, and `VITE_FIREBASE_PROFILES_DATABASE_URL`. Add Actions variable `VITE_FIREBASE_ADMIN_UIDS` and, if the website should also load live candles and backtest statistics, `VITE_API_BASE_URL` (an HTTPS origin for the Python/MT5 API, without a trailing slash). Add the final `owner.github.io` hostname to Authentication's authorized domains. In GitHub repository settings, enable Pages with **GitHub Actions** as the source.
 
-GitHub Pages cannot host the Python/MT5 API. The API must run on a separate server with MetaTrader 5 connected, Firebase Admin credentials configured, `MYVIEW_REQUIRE_AUTH=true`, and the Pages origin allowed in CORS. Without `VITE_API_BASE_URL`, sign-in pages can load but market candles, session statistics, and signal relay cannot reach the API.
+GitHub Pages cannot host the Python/MT5 API. Keep the API and MetaTrader 5 running on the laptop, and start the relay from its local admin page. Without `VITE_API_BASE_URL`, market candles and session statistics cannot reach the API, but authenticated signal reads still work directly from Firebase.
 
 ## Windows desktop installer
 

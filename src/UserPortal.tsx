@@ -6,10 +6,11 @@ import {
   createSeriesMarkers,
   type UTCTimestamp,
 } from 'lightweight-charts'
+import { onValue, ref } from 'firebase/database'
 import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, LogOut, LockKeyhole, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react'
 import { AuthProvider } from './auth'
 import { useAuth, type UserProfile } from './auth-context'
-import { firebaseReady } from './firebase'
+import { firebaseReady, profilesDb, signalSymbolKey } from './firebase'
 import { apiUrl, appPath } from './deployment'
 
 type Signal = {
@@ -144,6 +145,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   const [symbol, setSymbol] = useState('GOLD')
   const [symbolInput, setSymbolInput] = useState('GOLD')
   const [signals, setSignals] = useState<Signal[]>([])
+  const [signalFeedError, setSignalFeedError] = useState('')
   const [candles, setCandles] = useState<Candle[]>([])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [chartState, setChartState] = useState('Loading market data')
@@ -153,6 +155,17 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   const latestSignals = useMemo(() => [...signals].sort((a, b) => b.entry_time - a.entry_time).slice(0, 4), [signals])
 
   useEffect(() => {
+    if (profilesDb) {
+      return onValue(ref(profilesDb, `signals/${signalSymbolKey(symbol)}`), (snapshot) => {
+        const value = snapshot.val()
+        const nextSignals = value && typeof value === 'object' ? Object.values(value) : []
+        setSignals(nextSignals.filter(isSignal).sort((a, b) => a.entry_time - b.entry_time))
+        setSignalFeedError('')
+      }, (reason) => {
+        setSignals([])
+        setSignalFeedError(`Could not read signals from Firebase: ${reason.message}`)
+      })
+    }
     const controller = new AbortController()
     let active = true
     let inFlight = false
@@ -264,7 +277,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
       <section className="market-layout">
         <div className="market-chart-panel"><div className="panel-heading"><div><span className="eyebrow">{symbol} · M5</span><h2>Price action</h2></div><span className="readonly-tag">READ ONLY</span></div><div className="market-chart-wrap"><div className="market-chart" ref={chartNode} />{chartState && <div className="chart-overlay-state"><Activity size={18} /><span>{chartState}</span></div>}</div><div className="chart-note"><span>MT5 market feed <b>·</b> 5-minute candles</span><span>{updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : 'Awaiting feed'}</span></div></div>
         <aside className="signal-rail"><div className="panel-heading"><div><span className="eyebrow">ENGINE FEED</span><h2>Latest signals <b className="count-badge">{latestSignals.length}</b></h2></div><span className="feed-live"><i /> LIVE</span></div>
-          {latestSignals.length ? <div className="signal-cards">{latestSignals.map((signal) => <SignalCard key={`${signal.entry_time}-${signal.direction}`} signal={signal} />)}</div> : <div className="empty-feed"><span className="empty-orbit"><Activity size={18} /></span><strong>No confirmed signals</strong><span>New engine signals appear here when the admin relay is running.</span></div>}
+          {signalFeedError ? <div className="empty-feed" role="alert"><span className="empty-orbit"><CircleAlert size={18} /></span><strong>Signal feed unavailable</strong><span>{signalFeedError}</span></div> : latestSignals.length ? <div className="signal-cards">{latestSignals.map((signal) => <SignalCard key={`${signal.entry_time}-${signal.direction}`} signal={signal} />)}</div> : <div className="empty-feed"><span className="empty-orbit"><Activity size={18} /></span><strong>No confirmed signals</strong><span>New engine signals appear here when the admin relay is running.</span></div>}
         </aside>
       </section>
       <section className="session-section"><div className="section-heading"><div><span className="eyebrow">LAST 30 DAYS · 1R TARGET</span><h2>Session win rates</h2></div><span className="section-caption">Backtest performance · not a forecast</span></div><div className="session-grid">{['Asian', 'London', 'New York', 'IB'].map((session) => <SessionCard key={session} session={session} item={sessions.find((result) => result.target_r === 1 && result.session === session)} />)}</div></section>

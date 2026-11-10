@@ -38,9 +38,6 @@ STRATEGY_TIMEFRAMES = {
 connected = False
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "").strip()
 FIREBASE_PROFILES_DATABASE_URL = os.getenv("FIREBASE_PROFILES_DATABASE_URL", "").strip()
-SIGNALS_FIREBASE_PROJECT_ID = os.getenv("SIGNALS_FIREBASE_PROJECT_ID", "").strip()
-SIGNALS_FIREBASE_DATABASE_URL = os.getenv("SIGNALS_FIREBASE_DATABASE_URL", "").strip()
-SIGNALS_GOOGLE_APPLICATION_CREDENTIALS = os.getenv("SIGNALS_GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 FIREBASE_ADMIN_UIDS = {
     uid.strip()
     for uid in os.getenv("FIREBASE_ADMIN_UIDS", "").split(",")
@@ -53,7 +50,6 @@ MYVIEW_CORS_ORIGINS = [
     if origin.strip()
 ]
 firebase_app = None
-signals_firebase_app = None
 SIGNAL_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9._-]{2,20}$")
 
 
@@ -97,28 +93,10 @@ def get_firebase_app():
 
 
 def get_signals_firebase_app():
-    global signals_firebase_app
-    if signals_firebase_app is not None:
-        return signals_firebase_app
-    if not SIGNALS_FIREBASE_PROJECT_ID or not SIGNALS_FIREBASE_DATABASE_URL:
-        raise HTTPException(status_code=503, detail="Signal Firebase project is not configured")
-    try:
-        signals_firebase_app = firebase_admin.get_app("myview-signals")
-    except ValueError:
-        signal_credentials = (
-            credentials.Certificate(SIGNALS_GOOGLE_APPLICATION_CREDENTIALS)
-            if SIGNALS_GOOGLE_APPLICATION_CREDENTIALS
-            else credentials.ApplicationDefault()
-        )
-        signals_firebase_app = firebase_admin.initialize_app(
-            signal_credentials,
-            {
-                "projectId": SIGNALS_FIREBASE_PROJECT_ID,
-                "databaseURL": SIGNALS_FIREBASE_DATABASE_URL,
-            },
-            name="myview-signals",
-        )
-    return signals_firebase_app
+    app = get_firebase_app()
+    if app is None:
+        raise HTTPException(status_code=503, detail="Firebase project is not configured")
+    return app
 
 
 def require_market_access(request: Request) -> None:

@@ -13,7 +13,11 @@ if not exist "dist\index.html" (
   exit /b 1
 )
 
-curl.exe --silent --fail --max-time 2 "http://127.0.0.1:8000/api/status" >nul 2>nul
+if exist "%~dp0api\.env.backend" (
+  for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0api\.env.backend") do if not "%%A"=="" set "%%A=%%B"
+)
+
+curl.exe --silent --fail --max-time 2 "http://127.0.0.1:8000/" >nul 2>nul
 if errorlevel 1 (
   start "MyView Market Lab" /D "%~dp0api" "%~dp0.venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000
 )
