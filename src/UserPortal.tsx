@@ -64,12 +64,14 @@ function AccessForm() {
   const [resetBusy, setResetBusy] = useState(false)
   const [email, setEmail] = useState('')
   const [formError, setFormError] = useState('')
+  const [formNotice, setFormNotice] = useState('')
   const [resetMessage, setResetMessage] = useState('')
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setFormError('')
+    setFormNotice('')
     setResetMessage('')
     clearError()
     const data = new FormData(event.currentTarget)
@@ -83,6 +85,7 @@ function AccessForm() {
         const nic = String(data.get('nic') ?? '').trim()
         if (password.length < 8) throw new Error('Use a password with at least 8 characters.')
         await register({ fullName, email, phone, nic }, password)
+        setFormNotice('Your request was created. Sign in after the administrator approves it.')
       }
     } catch (reason) {
       setFormError(firebaseMessage(reason))
@@ -121,10 +124,11 @@ function AccessForm() {
         <label>Password<input name="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type="password" required minLength={8} /></label>
         {mode === 'login' && <button className="forgot-password" type="button" disabled={resetBusy} onClick={() => void sendResetLink()}>{resetBusy ? 'Sending reset link…' : 'Forgot password?'}</button>}
         {(formError || error) && <div className="form-error" role="alert"><CircleAlert size={15} />{formError || error}</div>}
+        {formNotice && <p className="reset-message" role="status">{formNotice}</p>}
         {resetMessage && <p className="reset-message" role="status">{resetMessage}</p>}
         <button className="primary-button" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
       </form>
-      <div className="auth-switch">{mode === 'login' ? 'Need an account?' : 'Already registered?'} <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setFormError(''); setResetMessage(''); clearError() }}>{mode === 'login' ? 'Request access' : 'Sign in'}</button></div>
+      <div className="auth-switch">{mode === 'login' ? 'Need an account?' : 'Already registered?'} <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setFormError(''); setFormNotice(''); setResetMessage(''); clearError() }}>{mode === 'login' ? 'Request access' : 'Sign in'}</button></div>
       <p className="privacy-note"><LockKeyhole size={13} /> Passwords are handled by Firebase Authentication.</p>
     </div><span className="auth-copyright">MYVIEW MARKET LAB <b>·</b> SIGNALS ARE FOR INFORMATION ONLY</span></section>
   </main>
