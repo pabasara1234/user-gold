@@ -32,7 +32,17 @@ function Portal() {
   if (!firebaseReady) return <SetupNotice />
   if (authState.loading) return <div className="portal-loading"><span className="loader-mark" />Checking access</div>
   if (!authState.user) return <AccessForm />
-  if (authState.isAdmin) return <div className="account-state"><p>Admin account detected.</p><a href={appPath('admin.html')}>Open access management</a><button type="button" className="text-button" onClick={() => void authState.logout()}>Sign out</button></div>
+  if (authState.isAdmin) {
+    const adminProfile = authState.profile ?? {
+      uid: authState.user.uid,
+      fullName: authState.user.displayName || authState.user.email || 'Administrator',
+      email: authState.user.email || '',
+      phone: '',
+      nic: '',
+      status: 'approved' as const,
+    }
+    return <SignalDesk profile={adminProfile} />
+  }
   if (!authState.profile) return <PendingAccess title="Account details unavailable" detail="Your profile could not be found. Contact the administrator before retrying." />
   if (authState.profile.status === 'pending') return <PendingAccess title="Access request received" detail="Your account is waiting for admin approval. The signal desk will unlock as soon as access is granted." />
   if (authState.profile.status !== 'approved') return <PendingAccess title="Access is not active" detail="This account does not currently have signal desk access. Contact the administrator for help." />
@@ -126,7 +136,7 @@ function PendingAccess({ title, detail }: { title: string; detail: string }) {
 }
 
 function SignalDesk({ profile }: { profile: UserProfile }) {
-  const { logout, user } = useAuth()
+  const { logout, user, isAdmin } = useAuth()
   const [symbol, setSymbol] = useState('GOLD')
   const [symbolInput, setSymbolInput] = useState('GOLD')
   const [signals, setSignals] = useState<Signal[]>([])
@@ -244,7 +254,7 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   }
 
   return <div className="desk-shell">
-    <header className="desk-topbar"><a className="brand" href={appPath()}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span><button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
+    <header className="desk-topbar"><a className="brand" href={appPath()}><span className="brand-mark">M</span><span>myview<span className="brand-dot">.</span></span><i /> <small>SIGNAL DESK</small></a><div className="topbar-actions"><span className="connection-label"><i /> LIVE ENGINE</span>{isAdmin && <a className="icon-control" href={appPath('admin.html')} aria-label="Admin management" title="Admin management"><ShieldCheck size={16} /></a>}<button className="icon-control" type="button" aria-label="Account settings" title="Account settings" onClick={() => setProfileOpen(true)}><UserRound size={17} /></button><button className="icon-control" type="button" aria-label="Sign out" title="Sign out" onClick={() => void logout()}><LogOut size={17} /></button></div></header>
     <main className="desk-content">
       <div className="desk-title-row"><div><span className="eyebrow">MARKET OVERVIEW <b>/</b> {symbol}</span><h1>Signal desk</h1><p>Read-only market context and confirmed strategy levels.</p></div><form className="symbol-picker" onSubmit={chooseSymbol}><label htmlFor="symbol-input">SYMBOL</label><input id="symbol-input" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} aria-label="Market symbol" /><button type="submit" title="Load symbol" aria-label="Load symbol"><RefreshCw size={15} /></button></form></div>
       <section className="market-layout">
