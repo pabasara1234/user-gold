@@ -31,7 +31,7 @@ The client-side admin UID list only controls portal navigation. Realtime Databas
 
 ## GitHub Pages deployment
 
-The repository includes `.github/workflows/deploy-pages.yml`. Push to `main` or run the workflow manually to build and deploy only the member site (`/`). The admin site and `marketlab.html` are excluded from this first Pages release; the admin site remains available locally at `/admin.html` and can be added to Pages in a later release. The workflow detects the repository name and configures the correct GitHub Pages subpath automatically.
+The repository includes `.github/workflows/deploy-pages.yml`. Push to `main` or run the workflow manually to build and deploy the member site (`/`) and admin site (`/admin.html`). The workflow excludes `marketlab.html` and detects the repository name to configure the correct GitHub Pages subpath automatically.
 
 Before enabling Pages, add these Actions secrets from `website-sign-in-dbc96`: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, and `VITE_FIREBASE_PROFILES_DATABASE_URL`. Add Actions variables `VITE_FIREBASE_ADMIN_UIDS` and `VITE_API_BASE_URL` (the HTTPS origin for the Python/MT5 API, without a trailing slash). Configure the `nextgen-gold` service account on that API host. Add the final `owner.github.io` hostname to Authentication's authorized domains and API `MYVIEW_CORS_ORIGINS`. In GitHub repository settings, enable Pages with **GitHub Actions** as the source.
 

@@ -2,6 +2,7 @@ const CACHE_NAME = 'myview-shell-v1'
 const APP_BASE = new URL('./', self.location.href).pathname
 const APP_SHELL = [
   APP_BASE,
+  `${APP_BASE}admin.html`,
   `${APP_BASE}manifest.webmanifest`,
   `${APP_BASE}app-icon.svg`,
 ]
