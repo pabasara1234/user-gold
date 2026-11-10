@@ -14,7 +14,7 @@ The production build contains two separate website entries: the approved-member 
   ```powershell
   $env:FIREBASE_PROJECT_ID = 'website-sign-in-dbc96'
   $env:FIREBASE_PROFILES_DATABASE_URL = 'https://website-sign-in-dbc96-default-rtdb.firebaseio.com'
-  $env:FIREBASE_ADMIN_UIDS = 'hiUt8y2MAPTQeFl5aT5LsuYKkt42'
+  $env:FIREBASE_ADMIN_UIDS = 'LmimXySoBHbywGG91I4ozMECPy12'
   $env:MYVIEW_REQUIRE_AUTH = 'true'
   $env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\website-sign-in-service-account.json'
   $env:SIGNALS_FIREBASE_PROJECT_ID = 'nextgen-gold'
