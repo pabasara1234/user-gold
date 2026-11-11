@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { onValue, ref, set, update, serverTimestamp } from 'firebase/database'
+import { onValue, push, ref, remove, set, update, serverTimestamp } from 'firebase/database'
 import { CircleAlert, LogOut, Radio, RefreshCw, ShieldCheck, UserCheck, UserX } from 'lucide-react'
 import { AuthProvider } from './auth'
 import { useAuth, type UserProfile } from './auth-context'
-import { adminProfilesDb, adminUids, firebaseReady } from './firebase'
+import { adminProfilesDb, adminUids, firebaseReady, signalSymbolKey } from './firebase'
 import { apiUrl, appPath } from './deployment'
 
 type ManagedUser = UserProfile & { reviewedAt?: number }
 type EngineSignal = { direction: 'buy' | 'sell'; entry_time: number; entry: number; stop: number; [key: string]: unknown }
 type RelayStatus = { running: boolean; updatedAt: number; signalCount: number; lastError?: string }
+type ManualTrade = { id: string; direction: 'buy' | 'sell'; entry_time: number; entry: number; stop: number; target: number; symbol: string; source: 'manual'; setup?: string; outcome?: string; created_by?: string }
 
 function AdminRoot() {
   const { user, loading, isAdmin, login, logout } = useAuth()
@@ -57,6 +58,13 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   const [signalCount, setSignalCount] = useState(0)
   const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(null)
   const [relayBusy, setRelayBusy] = useState(false)
+  const [manualSymbol, setManualSymbol] = useState('GOLD')
+  const [manualDirection, setManualDirection] = useState<'buy' | 'sell'>('buy')
+  const [manualTrades, setManualTrades] = useState<ManualTrade[]>([])
+  const [manualBusy, setManualBusy] = useState(false)
+  const [manualError, setManualError] = useState('')
+  const [manualNotice, setManualNotice] = useState('')
+  const [removingTradeId, setRemovingTradeId] = useState('')
   const [now, setNow] = useState(0)
   const relaySignalCount = useRef(0)
   const canRunRelay = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -64,6 +72,8 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
   const pendingCount = users.filter((item) => item.status === 'pending').length
   const approvedCount = users.filter((item) => item.status === 'approved').length
   const validRelaySymbol = /^[A-Z0-9._-]{2,20}$/.test(relaySymbol)
+  const validManualSymbol = /^[A-Z0-9._-]{2,20}$/.test(manualSymbol)
+  const visibleManualTrades = validManualSymbol ? manualTrades.filter((trade) => trade.symbol === manualSymbol) : []
   const relayIsActive = Boolean(relayStatus?.running && now >= relayStatus.updatedAt && now - relayStatus.updatedAt < 15_000)
 
   useEffect(() => {
@@ -127,6 +137,104 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
       unsubscribeStatus()
     }
   }, [user])
+
+  useEffect(() => {
+    if (!adminProfilesDb || !validManualSymbol) return
+    return onValue(ref(adminProfilesDb, `manualSignals/${signalSymbolKey(manualSymbol)}`), (snapshot) => {
+      const value = snapshot.val() as Record<string, Omit<ManualTrade, 'id'>> | null
+      const trades = value
+        ? Object.entries(value)
+          .filter((entry): entry is [string, Omit<ManualTrade, 'id'>] => {
+            const trade = entry[1]
+            return Boolean(trade)
+              && trade.source === 'manual'
+              && typeof trade.entry_time === 'number'
+              && typeof trade.entry === 'number'
+              && typeof trade.stop === 'number'
+              && typeof trade.target === 'number'
+              && (trade.direction === 'buy' || trade.direction === 'sell')
+              && typeof trade.symbol === 'string'
+          })
+          .map(([id, trade]) => ({ id, ...trade }))
+          .sort((left, right) => right.entry_time - left.entry_time)
+        : []
+      setManualTrades(trades)
+      setManualError('')
+    }, () => {
+      setManualTrades([])
+      setManualError('Could not read manual trades. Check Firebase database rules.')
+    })
+  }, [manualSymbol, validManualSymbol])
+
+  async function publishManualTrade(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!adminProfilesDb || !user) {
+      setManualError('Firebase is not configured for manual trades.')
+      return
+    }
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const symbol = String(formData.get('symbol') ?? '').trim().toUpperCase()
+    const entry = Number(formData.get('entry'))
+    const stop = Number(formData.get('stop'))
+    const target = Number(formData.get('target'))
+    if (!/^[A-Z0-9._-]{2,20}$/.test(symbol)) {
+      setManualError('Use a valid symbol with 2–20 letters, numbers, dots, underscores or hyphens.')
+      return
+    }
+    if (![entry, stop, target].every((price) => Number.isFinite(price) && price > 0)) {
+      setManualError('Entry, stop loss, and take profit must be positive prices.')
+      return
+    }
+    if (manualDirection === 'buy' ? !(stop < entry && entry < target) : !(target < entry && entry < stop)) {
+      setManualError(manualDirection === 'buy'
+        ? 'For a BUY trade, set Stop Loss below Entry and Take Profit above Entry.'
+        : 'For a SELL trade, set Take Profit below Entry and Stop Loss above Entry.')
+      return
+    }
+
+    setManualBusy(true)
+    setManualError('')
+    setManualNotice('')
+    try {
+      const tradeRef = push(ref(adminProfilesDb, `manualSignals/${signalSymbolKey(symbol)}`))
+      await set(tradeRef, {
+        direction: manualDirection,
+        entry_time: Math.floor(Date.now() / 1000),
+        entry,
+        stop,
+        target,
+        symbol,
+        source: 'manual',
+        setup: 'Manual Trade',
+        outcome: 'open',
+        created_by: user.uid,
+      })
+      setManualSymbol(symbol)
+      form.reset()
+      setManualDirection('buy')
+      setManualNotice(`${manualDirection.toUpperCase()} ${symbol} manual trade published to the user site.`)
+    } catch (reason) {
+      setManualError(reason instanceof Error ? reason.message : 'Could not publish the manual trade.')
+    } finally {
+      setManualBusy(false)
+    }
+  }
+
+  async function removeManualTrade(trade: ManualTrade) {
+    if (!adminProfilesDb) return
+    setRemovingTradeId(trade.id)
+    setManualError('')
+    setManualNotice('')
+    try {
+      await remove(ref(adminProfilesDb, `manualSignals/${signalSymbolKey(trade.symbol)}/${trade.id}`))
+      setManualNotice(`${trade.symbol} manual trade removed.`)
+    } catch (reason) {
+      setManualError(reason instanceof Error ? reason.message : 'Could not remove the manual trade.')
+    } finally {
+      setRemovingTradeId('')
+    }
+  }
 
   async function requestRelayState(enabled: boolean) {
     if (!adminProfilesDb) {
@@ -236,8 +344,38 @@ function AdminDesk({ adminEmail, logout }: { adminEmail: string; logout: () => P
       <div className="admin-metrics"><div className="admin-metric"><span>REGISTERED MEMBERS</span><strong>{users.length}</strong></div><div className="admin-metric"><span>WAITING FOR REVIEW</span><strong>{pendingCount}</strong></div><div className="admin-metric"><span>ACTIVE ACCESS</span><strong>{approvedCount}</strong></div></div>
       <div className="admin-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MEMBERS</span><h2>User access</h2></div><input className="admin-filter" aria-label="Search users" placeholder="Search name, email or phone" value={search} onChange={(event) => setSearch(event.target.value)} /></div>{error && <div className="admin-error" role="alert">{error}</div>}{notice && <div className="admin-success" role="status">{notice}</div>}<div className="user-list"><div className="user-row header"><span>MEMBER</span><span>CONTACT</span><span>NIC</span><span>STATUS</span><span>ACTIONS</span></div>{filteredUsers.length ? filteredUsers.map((item) => <UserRow key={item.uid} item={item} busy={workingUid === item.uid} onApprove={() => void setAccess(item, 'approved')} onRevoke={() => void setAccess(item, 'disabled')} />) : <div className="list-empty">{users.length ? 'No matching members.' : 'No user registrations yet.'}</div>}</div></section>
         <aside className="admin-panel"><div className="admin-panel-heading"><div><span className="eyebrow">MT5 Â· PYTHON ENGINE</span><h2>Signal relay</h2></div><Radio size={16} color="#63736a" /></div><div className="relay-body"><div className={`relay-status ${relayIsActive ? 'running' : ''}`}><i />{relayIsActive ? 'Relay is polling every 5 seconds' : relayEnabled ? 'Start requested · waiting for laptop relay' : 'Relay is stopped'}</div><label className="field-label" htmlFor="relay-symbol" style={{ display: 'block', marginTop: 16, color: '#78827c', fontSize: 9 }}>MT5 SYMBOL</label><div className="symbol-picker" style={{ marginTop: 6, width: '100%' }}><input id="relay-symbol" value={relaySymbol} disabled={relayEnabled || relayBusy} onChange={(event) => setRelaySymbol(event.target.value.toUpperCase())} aria-label="Relay symbol" /><button type="button" title="Reset symbol" aria-label="Reset symbol" disabled={relayEnabled || relayBusy} onClick={() => setRelaySymbol('GOLD')}><RefreshCw size={13} /></button></div><button className={`relay-button ${relayEnabled ? 'stop' : ''}`} type="button" disabled={!validRelaySymbol || !adminUids.size || relayBusy} onClick={() => void requestRelayState(!relayEnabled)}>{relayBusy ? 'Updating relay…' : relayEnabled ? 'Stop relay' : 'Start signal relay'}</button>{!canRunRelay && <small className="password-message">Keep the MT5 laptop and its local Admin page open so it can receive this request.</small>}{!validRelaySymbol && <small className="password-message">Use 2–20 letters, numbers, dots, underscores or hyphens.</small>}{relayError && <div className="admin-error" role="alert">{relayError}</div>}{relayNotice && <div className="admin-success" role="status">{relayNotice}</div>}<div className="relay-meta"><span>LAST CHECK <strong>{relayUpdated}</strong></span><span>PUBLISHED SIGNALS <strong>{signalCount}</strong></span></div><p className="relay-note">The laptop relay reads start/stop requests from Firebase, then sends engine signals every 5 seconds and chart candles every 30 seconds. The MT5 API stays local and is never exposed to the internet.</p></div></aside></div>
+      <section className="admin-panel manual-admin-panel">
+        <div className="admin-panel-heading"><div><span className="eyebrow">ADMIN-ONLY PUBLISHING</span><h2>Manual trade</h2></div><span className="manual-badge">MANUAL</span></div>
+        <form className="manual-form" onSubmit={(event) => void publishManualTrade(event)}>
+          <label>SYMBOL<input name="symbol" value={manualSymbol} onChange={(event) => setManualSymbol(event.target.value.toUpperCase())} maxLength={20} required /></label>
+          <label>DIRECTION<select value={manualDirection} onChange={(event) => setManualDirection(event.target.value as 'buy' | 'sell')}><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
+          <label>ENTRY<input name="entry" type="number" min="0" step="any" required /></label>
+          <label>STOP LOSS<input name="stop" type="number" min="0" step="any" required /></label>
+          <label>TAKE PROFIT<input name="target" type="number" min="0" step="any" required /></label>
+          <button className="relay-button manual-publish-button" type="submit" disabled={manualBusy || !validManualSymbol}>{manualBusy ? 'Publishing…' : 'Publish manual trade'}</button>
+        </form>
+        <p className="manual-help">BUY: Stop Loss &lt; Entry &lt; Take Profit. SELL: Take Profit &lt; Entry &lt; Stop Loss.</p>
+        {manualError && <div className="admin-error" role="alert">{manualError}</div>}
+        {manualNotice && <div className="admin-success" role="status">{manualNotice}</div>}
+        <div className="manual-admin-list">
+          <div className="manual-admin-list-heading"><strong>{manualSymbol} manual trades</strong><span>{manualTrades.length} published</span></div>
+          {visibleManualTrades.length ? visibleManualTrades.map((trade) => <div className="manual-admin-row" key={trade.id}>
+            <ManualLevels trade={trade} />
+            <button type="button" className="manual-remove-button" disabled={removingTradeId === trade.id} onClick={() => void removeManualTrade(trade)}>{removingTradeId === trade.id ? 'Removing…' : 'Remove'}</button>
+          </div>) : <div className="list-empty">No manual trades for this symbol.</div>}
+        </div>
+      </section>
       <div className="desk-disclaimer"><ShieldCheck size={14} /><span>Admin identity is checked against the configured UID; database rules must use the same UID. Never expose a Firebase service-account key in this website.</span></div>
     </main>
+  </div>
+}
+
+function ManualLevels({ trade }: { trade: ManualTrade }) {
+  return <div className="manual-admin-levels">
+    <span className={`user-status ${trade.direction === 'buy' ? 'approved' : 'disabled'}`}>{trade.direction.toUpperCase()}</span>
+    <span>Entry <strong>{trade.entry}</strong></span>
+    <span>SL <strong>{trade.stop}</strong></span>
+    <span>TP <strong>{trade.target}</strong></span>
   </div>
 }
 

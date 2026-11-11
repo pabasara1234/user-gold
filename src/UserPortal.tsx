@@ -29,7 +29,9 @@ type Signal = {
   session_name?: string | null
   setup?: string
   symbol?: string
+  source?: string
 }
+type ManualTrade = Signal & { id: string; target: number; source: 'manual' }
 type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number }
 type SessionSummary = { target_r: number; session: string; summary: { wins: number; losses: number; trades: number; win_rate: number } }
 
@@ -190,6 +192,8 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
   const [symbolInput, setSymbolInput] = useState('GOLD')
   const [signals, setSignals] = useState<Signal[]>([])
   const [signalFeedError, setSignalFeedError] = useState('')
+  const [manualTrades, setManualTrades] = useState<ManualTrade[]>([])
+  const [manualTradeError, setManualTradeError] = useState('')
   const [candles, setCandles] = useState<Candle[]>([])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [chartState, setChartState] = useState('Loading market data')
@@ -287,6 +291,24 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
     const interval = window.setInterval(() => void loadSignals(), 5_000)
     return () => { active = false; controller.abort(); window.clearInterval(interval) }
   }, [symbol, updateSignals, user])
+
+  useEffect(() => {
+    if (!profilesDb) return
+    return onValue(ref(profilesDb, `manualSignals/${signalSymbolKey(symbol)}`), (snapshot) => {
+      const value = snapshot.val() as Record<string, unknown> | null
+      const trades = value
+        ? Object.entries(value)
+          .filter((entry): entry is [string, ManualTrade] => isManualTrade(entry[1]))
+          .map(([id, trade]) => ({ ...trade, id }))
+          .sort((left, right) => right.entry_time - left.entry_time)
+        : []
+      setManualTrades(trades)
+      setManualTradeError('')
+    }, (reason) => {
+      setManualTrades([])
+      setManualTradeError(`Could not read manual trades from Firebase: ${reason.message}`)
+    })
+  }, [symbol])
 
   useEffect(() => {
     if (profilesDb) {
@@ -521,6 +543,14 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
           {signalFeedError ? <div className="empty-feed" role="alert"><span className="empty-orbit"><CircleAlert size={18} /></span><strong>Signal feed unavailable</strong><span>{signalFeedError}</span></div> : latestSignals.length ? <div className="signal-cards">{latestSignals.map((signal) => <SignalCard key={`${signal.entry_time}-${signal.direction}`} signal={signal} />)}</div> : <div className="empty-feed"><span className="empty-orbit"><Activity size={18} /></span><strong>No confirmed signals</strong><span>New engine signals appear here when the admin relay is running.</span></div>}
         </aside>
       </section>
+      <section className="manual-trades-panel">
+        <div className="section-heading"><div><span className="eyebrow">ADMIN-PUBLISHED</span><h2>Manual trades <b className="count-badge">{manualTrades.length}</b></h2></div><span className="manual-badge">MANUAL ONLY</span></div>
+        {manualTradeError
+          ? <div className="manual-trades-empty" role="alert">{manualTradeError}</div>
+          : manualTrades.length
+            ? <div className="manual-trade-cards">{manualTrades.map((trade) => <ManualTradeCard key={trade.id} trade={trade} />)}</div>
+            : <div className="manual-trades-empty">No manual trades published for {symbol}.</div>}
+      </section>
       <section className="session-section"><div className="section-heading"><div><span className="eyebrow">LAST 30 DAYS · 1R TARGET</span><h2>Session win rates</h2></div><span className="section-caption">Backtest performance · not a forecast</span></div><div className="session-grid">{['Asian', 'London', 'New York', 'IB'].map((session) => <SessionCard key={session} session={session} item={sessions.find((result) => result.target_r === 1 && result.session === session)} />)}</div></section>
       <div className="desk-disclaimer"><CircleAlert size={14} /><span>Signals are informational, not financial advice. NextGen Gold does not place or manage orders. Historical results do not guarantee future outcomes.</span></div>
     </main>
@@ -528,6 +558,21 @@ function SignalDesk({ profile }: { profile: UserProfile }) {
     {signalNotice && <div className={`signal-toast ${signalNotice.direction}`} role="status"><span className="signal-toast-icon"><Bell size={16} /></span><span><strong>New {signalNotice.direction.toUpperCase()} signal · {signalNotice.symbol ?? symbol}</strong><small>{signalNotice.setup ?? 'Sweep + BOS'} · Entry {signalNotice.entry.toFixed(2)}</small></span><button type="button" aria-label="Dismiss signal notification" onClick={() => setSignalNotice(null)}><X size={15} /></button></div>}
     {profileOpen && <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} />}
   </div>
+}
+
+function ManualTradeCard({ trade }: { trade: ManualTrade }) {
+  return <article className={`manual-trade-card ${trade.direction}`}>
+    <div className="manual-trade-heading">
+      <span className={`side-pill ${trade.direction}`}>{trade.direction.toUpperCase()} · {trade.symbol}</span>
+      <span className="manual-badge">MANUAL TRADE</span>
+      <time>{new Date(trade.entry_time * 1000).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</time>
+    </div>
+    <div className="manual-trade-levels">
+      <Level label="ENTRY" value={trade.entry} />
+      <Level label="STOP LOSS" value={trade.stop} />
+      <Level label="TAKE PROFIT" value={trade.target} />
+    </div>
+  </article>
 }
 
 function SignalCard({ signal }: { signal: Signal }) {
@@ -584,6 +629,14 @@ function isSignal(value: unknown): value is Signal {
   if (!value || typeof value !== 'object') return false
   const signal = value as Partial<Signal>
   return (signal.direction === 'buy' || signal.direction === 'sell') && typeof signal.entry_time === 'number' && typeof signal.entry === 'number' && typeof signal.stop === 'number'
+}
+
+function isManualTrade(value: unknown): value is ManualTrade {
+  if (!isSignal(value) || !value || typeof value !== 'object') return false
+  const trade = value as Partial<ManualTrade>
+  return trade.source === 'manual'
+    && typeof trade.target === 'number'
+    && typeof trade.symbol === 'string'
 }
 
 function decodeVapidPublicKey(value: string) {

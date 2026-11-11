@@ -41,6 +41,26 @@
         ".write": false
       }
     },
+    "manualSignals": {
+      "$symbol": {
+        ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
+        "$tradeId": {
+          ".write": "auth != null && auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12'",
+          ".validate": "newData.hasChildren(['direction', 'entry_time', 'entry', 'stop', 'target', 'symbol', 'source', 'setup', 'outcome', 'created_by'])",
+          "direction": { ".validate": "newData.val() === 'buy' || newData.val() === 'sell'" },
+          "entry_time": { ".validate": "newData.isNumber() && newData.val() > 0" },
+          "entry": { ".validate": "newData.isNumber() && newData.val() > 0" },
+          "stop": { ".validate": "newData.isNumber() && newData.val() > 0" },
+          "target": { ".validate": "newData.isNumber() && newData.val() > 0" },
+          "symbol": { ".validate": "newData.isString() && newData.val().matches(/^[A-Z0-9._-]{2,20}$/)" },
+          "source": { ".validate": "newData.val() === 'manual'" },
+          "setup": { ".validate": "newData.val() === 'Manual Trade'" },
+          "outcome": { ".validate": "newData.val() === 'open'" },
+          "created_by": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
     "market": {
       "$symbol": {
         ".read": "auth != null && (auth.uid === 'LmimXySoBHbywGG91I4ozMECPy12' || root.child('users').child(auth.uid).child('status').val() === 'approved')",
